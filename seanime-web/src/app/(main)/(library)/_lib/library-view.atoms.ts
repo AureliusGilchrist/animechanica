@@ -1,3 +1,3 @@
 import { atom } from "jotai"
 
-export const __library_viewAtom = atom<"base" | "detailed" | "manga">("base")
+export const __library_viewAtom = atom<"base" | "detailed">("base")

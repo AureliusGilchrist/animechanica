@@ -5,7 +5,6 @@ import (
 	"runtime"
 	"seanime/internal/api/anilist"
 	"seanime/internal/api/metadata"
-	"seanime/internal/cache"
 	"seanime/internal/constants"
 	"seanime/internal/continuity"
 	"seanime/internal/database/db"
@@ -14,11 +13,9 @@ import (
 	"seanime/internal/directstream"
 	discordrpc_presence "seanime/internal/discordrpc/presence"
 	"seanime/internal/doh"
-	"seanime/internal/enmasse"
 	"seanime/internal/events"
 	"seanime/internal/extension_playground"
 	"seanime/internal/extension_repo"
-
 	"seanime/internal/hook"
 	"seanime/internal/library/autodownloader"
 	"seanime/internal/library/autoscanner"
@@ -42,7 +39,6 @@ import (
 	"seanime/internal/platforms/simulated_platform"
 	"seanime/internal/plugin"
 	"seanime/internal/report"
-	"seanime/internal/session"
 	"seanime/internal/torrent_clients/torrent_client"
 	"seanime/internal/torrents/torrent"
 	"seanime/internal/torrentstream"
@@ -75,7 +71,6 @@ type (
 		ExtensionPlaygroundRepository *extension_playground.PlaygroundRepository
 		DirectStreamManager           *directstream.Manager
 		NativePlayer                  *nativeplayer.NativePlayer
-		SessionManager                *session.Manager
 		MediaPlayer                   struct {
 			VLC   *vlc.VLC
 			MpcHc *mpchc.MpcHc
@@ -123,9 +118,6 @@ type (
 		isOffline          *bool
 		NakamaManager      *nakama.Manager
 		ServerPasswordHash string // SHA-256 hash of the server password
-		AnilistCacheManager *cache.AnilistCacheManager // Comprehensive AniList data caching
-		EnhancedAnilistCacheManager *cache.EnhancedAnilistCacheManager // Enhanced AniList data caching with optimization
-		EnMasseDownloader *enmasse.Downloader // En Masse Downloader for WeebCentral manga
 	}
 )
 
@@ -260,9 +252,6 @@ func NewApp(configOpts *ConfigOptions, selfupdater *updater.SelfUpdater) *App {
 	// Initialize Anilist platform
 	anilistPlatform := anilist_platform.NewAnilistPlatform(anilistCW, logger)
 
-	// TODO: Initialize Enhanced Anilist Cache Manager for API optimization
-	// enhancedCacheManager := cache.NewEnhancedAnilistCacheManager(logger, anilistCW)
-
 	// Update plugin context with new modules
 	plugin.GlobalAppContext.SetModulesPartial(plugin.AppContextModules{
 		AnilistPlatform:  anilistPlatform,
@@ -336,7 +325,6 @@ func NewApp(configOpts *ConfigOptions, selfupdater *updater.SelfUpdater) *App {
 		LocalManager:                  localManager,
 		WSEventManager:                wsEventManager,
 		Logger:                        logger,
-		SessionManager:                session.NewManager(),
 		Version:                       constants.Version,
 		Updater:                       updater.New(constants.Version, logger, wsEventManager),
 		FileCacher:                    fileCacher,
@@ -376,8 +364,6 @@ func NewApp(configOpts *ConfigOptions, selfupdater *updater.SelfUpdater) *App {
 		HookManager:                     hookManager,
 		isOffline:                       &isOffline,
 		ServerPasswordHash:              serverPasswordHash,
-		AnilistCacheManager:             cache.NewAnilistCacheManager(logger),
-		// EnhancedAnilistCacheManager:     enhancedCacheManager,
 	}
 
 	// Run database migrations if version has changed

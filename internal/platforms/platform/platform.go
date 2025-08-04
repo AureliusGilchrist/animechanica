@@ -49,18 +49,14 @@ type Platform interface {
 	AddMediaToCollection(context context.Context, mIds []int) error
 	// GetStudioDetails gets the studio details for the given studio ID
 	GetStudioDetails(context context.Context, studioID int) (*anilist.StudioDetails, error)
-	// CharacterDetails gets the character details for the given character ID
-	CharacterDetails(context context.Context, characterID *int) (*anilist.Character, error)
-	// GetCharacter gets the character details for the given character ID
-	GetCharacter(context context.Context, characterID int) (*anilist.Character, error)
-	// GetViewerStats gets the viewer stats
-	GetViewerStats(context context.Context) (*anilist.ViewerStats, error)
-	// GetAnimeAiringSchedule gets the schedule for airing anime in the collection
-	GetAnimeAiringSchedule(context context.Context) (*anilist.AnimeAiringSchedule, error)
 	// GetAnilistClient gets the AniList client
 	GetAnilistClient() anilist.AnilistClient
 	// RefreshAnimeCollection refreshes the anime collection
 	RefreshAnimeCollection(context context.Context) (*anilist.AnimeCollection, error)
 	// RefreshMangaCollection refreshes the manga collection
 	RefreshMangaCollection(context context.Context) (*anilist.MangaCollection, error)
+	// GetViewerStats gets the viewer stats
+	GetViewerStats(context context.Context) (*anilist.ViewerStats, error)
+	// GetAnimeAiringSchedule gets the schedule for airing anime in the collection
+	GetAnimeAiringSchedule(context context.Context) (*anilist.AnimeAiringSchedule, error)
 }

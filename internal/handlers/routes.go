@@ -82,7 +82,7 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 				newCookie.Name = "Seanime-Client-Id"
 				newCookie.Value = u
 				newCookie.HttpOnly = false // Make the cookie accessible via JS
-				newCookie.Expires = time.Now().Add(7 * 24 * time.Hour)
+				newCookie.Expires = time.Now().Add(24 * time.Hour)
 				newCookie.Path = "/"
 				newCookie.Domain = ""
 				newCookie.SameSite = http.SameSiteDefaultMode
@@ -139,24 +139,6 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1.POST("/start", h.HandleGettingStarted)
 	v1.PATCH("/settings/auto-downloader", h.HandleSaveAutoDownloaderSettings)
 
-	// Cache management
-	v1.GET("/cache/stats", h.HandleGetCacheStats)
-	v1.POST("/cache/clear-all", h.HandleClearAllCaches)
-	v1.POST("/cache/clear-collections", h.HandleClearCollectionCaches)
-	v1.POST("/cache/clear-media", h.HandleClearMediaCaches)
-	v1.POST("/cache/clear-characters", h.HandleClearCharacterCaches)
-	v1.POST("/cache/clear-stats", h.HandleClearStatsCaches)
-	v1.POST("/cache/clear-session", h.HandleClearSessionCaches)
-
-	// Manga cache management
-	v1.GET("/cache/manga/stats", h.HandleGetMangaCacheStats)
-	v1.POST("/cache/manga/clear", h.HandleClearMangaCache)
-	v1.POST("/cache/manga/refresh", h.HandleRefreshMangaIndex)
-
-	// Comprehensive cache management
-	v1.GET("/cache/all/stats", h.HandleGetAllCacheStats)
-	v1.POST("/cache/all/clear", h.HandleClearAllSystemCaches)
-
 	// Auto Downloader
 	v1.POST("/auto-downloader/run", h.HandleRunAutoDownloader)
 	v1.GET("/auto-downloader/rule/:id", h.HandleGetAutoDownloaderRule)
@@ -194,14 +176,6 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 
 	v1Anilist.GET("/studio-details/:id", h.HandleGetAnilistStudioDetails)
 
-	// Character
-	v1Anilist.GET("/character", h.HandleGetCharacterDetails)
-
-	// Cast and Crew - DISABLED due to GraphQL type issues
-	// v1.GET("/anime/:id/cast-crew", h.HandleGetAnimeCastCrew)
-	// v1.GET("/manga/:id/cast-crew", h.HandleGetMangaCastCrew)
-	// v1.GET("/studio/:id", h.HandleGetStudioDetails)
-
 	v1Anilist.POST("/list-entry", h.HandleEditAnilistListEntry)
 
 	v1Anilist.DELETE("/list-entry", h.HandleDeleteAnilistListEntry)
@@ -213,37 +187,6 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Anilist.GET("/list-missed-sequels", h.HandleAnilistListMissedSequels)
 
 	v1Anilist.GET("/stats", h.HandleGetAniListStats)
-
-	//
-	// Favorites
-	//
-
-	v1.POST("/favorites/toggle", h.HandleToggleFavorite)
-	v1.GET("/favorites/status/:id", h.HandleGetFavoriteStatus)
-
-	// AniList Profile Sync
-	v1.POST("/anilist/profile/update", h.HandleUpdateAniListProfile)
-	v1.POST("/anilist/favorites/toggle", h.HandleToggleFavoriteAniList)
-
-	//
-	// Watch History
-	//
-
-	v1.POST("/watch-history/progress", h.HandleUpdateWatchProgress)
-	v1.GET("/watch-history", h.HandleGetWatchHistory)
-	v1.GET("/watch-history/media/:id", h.HandleGetMediaWatchStatus)
-
-	//
-	// API Optimization
-	//
-
-	v1.GET("/api-optimization/stats", h.HandleGetAPIOptimizationStats)
-	v1.POST("/api-optimization/reset-stats", h.HandleResetAPIOptimizationStats)
-	v1.POST("/api-optimization/toggle-prefetching", h.HandleTogglePrefetching)
-	v1.GET("/api-optimization/configuration", h.HandleGetCacheConfiguration)
-	v1.POST("/api-optimization/optimize/:id", h.HandleOptimizeSpecificMedia)
-	v1.POST("/api-optimization/bulk-optimize", h.HandleBulkOptimizeMedia)
-	v1.GET("/api-optimization/call-history", h.HandleGetAPICallHistory)
 
 	//
 	// MAL
@@ -382,7 +325,6 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	//
 
 	v1Manga := v1.Group("/manga")
-	v1Manga.GET("/anilist/collection", h.HandleGetAnilistMangaCollection)
 	v1Manga.POST("/anilist/collection", h.HandleGetAnilistMangaCollection)
 	v1Manga.GET("/anilist/collection/raw", h.HandleGetRawAnilistMangaCollection)
 	v1Manga.POST("/anilist/collection/raw", h.HandleGetRawAnilistMangaCollection)
@@ -400,7 +342,6 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Manga.GET("/downloaded-chapters/:id", h.HandleGetMangaEntryDownloadedChapters)
 	v1Manga.GET("/downloads", h.HandleGetMangaDownloadsList)
 	v1Manga.POST("/download-chapters", h.HandleDownloadMangaChapters)
-	v1Manga.POST("/save-locally", h.HandleSaveMangaLocally)
 	v1Manga.POST("/download-data", h.HandleGetMangaDownloadData)
 	v1Manga.DELETE("/download-chapter", h.HandleDeleteMangaDownloadedChapters)
 	v1Manga.GET("/download-queue", h.HandleGetMangaDownloadQueue)
@@ -408,13 +349,6 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Manga.POST("/download-queue/stop", h.HandleStopMangaDownloadQueue)
 	v1Manga.DELETE("/download-queue", h.HandleClearAllChapterDownloadQueue)
 	v1Manga.POST("/download-queue/reset-errored", h.HandleResetErroredChapterDownloadQueue)
-
-	// En Masse Downloader
-	v1Manga.POST("/en-masse/start", h.HandleStartEnMasseDownload)
-	v1Manga.POST("/en-masse/pause", h.HandlePauseEnMasseDownload)
-	v1Manga.POST("/en-masse/resume", h.HandleResumeEnMasseDownload)
-	v1Manga.POST("/en-masse/stop", h.HandleStopEnMasseDownload)
-	v1Manga.GET("/en-masse/status", h.HandleGetEnMasseStatus)
 
 	v1Manga.POST("/search", h.HandleMangaManualSearch)
 	v1Manga.POST("/manual-mapping", h.HandleMangaManualMapping)
@@ -579,50 +513,6 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Nakama.POST("/watch-party/join", h.HandleNakamaJoinWatchParty)
 	v1Nakama.POST("/watch-party/leave", h.HandleNakamaLeaveWatchParty)
 
-	e.GET("/", func(c echo.Context) error {
-		// Display anime collection on root page
-		animeCollection, err := h.App.GetAnimeCollection(false)
-		if err != nil {
-			return h.RespondWithError(c, err)
-		}
-		// Render as HTML (simple)
-		html := "<html><head><title>Anime Collection</title></head><body><h1>Anime Collection</h1><ul>"
-		for _, list := range animeCollection.GetMediaListCollection().GetLists() {
-			status := ""
-			if list.GetStatus() != nil {
-				status = string(*list.GetStatus())
-			}
-			for _, entry := range list.Entries {
-				if entry.Media != nil {
-					html += "<li>" + entry.Media.GetTitleSafe() + " (" + status + ")</li>"
-				}
-			}
-		}
-		html += "</ul></body></html>"
-		return c.HTML(200, html)
-	})
-
-	e.GET("/manga", func(c echo.Context) error {
-		// Display manga collection on /manga page
-		mangaCollection, err := h.App.GetMangaCollection(false)
-		if err != nil {
-			return h.RespondWithError(c, err)
-		}
-		html := "<html><head><title>Manga Collection</title></head><body><h1>Manga Collection</h1><ul>"
-		for _, list := range mangaCollection.GetMediaListCollection().GetLists() {
-			status := ""
-			if list.GetStatus() != nil {
-				status = string(*list.GetStatus())
-			}
-			for _, entry := range list.Entries {
-				if entry.Media != nil {
-					html += "<li>" + entry.Media.GetTitleSafe() + " (" + status + ")</li>"
-				}
-			}
-		}
-		html += "</ul></body></html>"
-		return c.HTML(200, html)
-	})
 }
 
 func (h *Handler) JSON(c echo.Context, code int, i interface{}) error {

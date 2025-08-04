@@ -61,29 +61,12 @@ export type MangaReader_SelectedChapter = {
 }
 
 /**
- * Stores the current chapter being read per manga
- * Key format: "sea-manga-chapter-{mediaId}"
+ * Stores the current chapter being read
  */
-const __manga_selectedChapterAtomsMap = new Map<number, ReturnType<typeof atomWithStorage<MangaReader_SelectedChapter | undefined>>>()
-
-function getMangaSelectedChapterAtom(mediaId: number) {
-    if (!__manga_selectedChapterAtomsMap.has(mediaId)) {
-        const atom = atomWithStorage<MangaReader_SelectedChapter | undefined>(
-            `sea-manga-chapter-${mediaId}`,
-            undefined,
-            undefined,
-            { getOnInit: true }
-        )
-        __manga_selectedChapterAtomsMap.set(mediaId, atom)
-    }
-    return __manga_selectedChapterAtomsMap.get(mediaId)!
-}
-
-/**
- * Global atom that stores the currently active manga's selected chapter
- * This is used by the drawer to determine if it should be open
- */
-export const __manga_selectedChapterAtom = atom<MangaReader_SelectedChapter | undefined>(undefined)
+export const __manga_selectedChapterAtom = atomWithStorage<MangaReader_SelectedChapter | undefined>("sea-manga-chapter",
+    undefined,
+    undefined,
+    { getOnInit: true })
 
 export function useSetCurrentChapter() {
     return useSetAtom(__manga_selectedChapterAtom)
@@ -91,65 +74,6 @@ export function useSetCurrentChapter() {
 
 export function useCurrentChapter() {
     return useAtomValue(__manga_selectedChapterAtom)
-}
-
-/**
- * Hook to manage per-manga chapter selection
- * This ensures each manga has its own selected chapter state
- */
-export function useMangaChapterSelection(mediaId: number | undefined) {
-    const setGlobalSelectedChapter = useSetAtom(__manga_selectedChapterAtom)
-    const globalSelectedChapter = useAtomValue(__manga_selectedChapterAtom)
-    
-    const perMangaAtom = React.useMemo(() => {
-        if (!mediaId) return null
-        return getMangaSelectedChapterAtom(mediaId)
-    }, [mediaId])
-    
-    const fallbackAtom = React.useMemo(() => atom<MangaReader_SelectedChapter | undefined>(undefined), [])
-    const [perMangaSelectedChapter, setPerMangaSelectedChapter] = useAtom(perMangaAtom || fallbackAtom)
-    
-    // Sync per-manga state with global state when this manga is active
-    React.useEffect(() => {
-        if (!mediaId || !perMangaAtom) return
-        
-        // If this manga has a selected chapter and it matches the current media, sync to global
-        if (perMangaSelectedChapter && perMangaSelectedChapter.mediaId === mediaId) {
-            setGlobalSelectedChapter(perMangaSelectedChapter)
-        } else {
-            // Clear global state if no chapter selected for this manga
-            setGlobalSelectedChapter(undefined)
-        }
-    }, [mediaId, perMangaSelectedChapter, setGlobalSelectedChapter, perMangaAtom])
-    
-    // Clear global state when switching away from this manga
-    React.useEffect(() => {
-        return () => {
-            // Only clear if the global state belongs to this manga
-            if (globalSelectedChapter && globalSelectedChapter.mediaId === mediaId) {
-                setGlobalSelectedChapter(undefined)
-            }
-        }
-    }, [mediaId])
-    
-    const setSelectedChapter = React.useCallback((chapter: MangaReader_SelectedChapter | undefined) => {
-        if (!mediaId || !perMangaAtom) return
-        
-        // Update per-manga state
-        setPerMangaSelectedChapter(chapter)
-        
-        // Update global state if this is the current manga
-        if (chapter && chapter.mediaId === mediaId) {
-            setGlobalSelectedChapter(chapter)
-        } else if (!chapter) {
-            setGlobalSelectedChapter(undefined)
-        }
-    }, [mediaId, setPerMangaSelectedChapter, setGlobalSelectedChapter, perMangaAtom])
-    
-    return {
-        selectedChapter: perMangaSelectedChapter,
-        setSelectedChapter,
-    }
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

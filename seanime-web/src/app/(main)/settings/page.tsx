@@ -305,8 +305,6 @@ export default function Page() {
                                         scannerMatchingThreshold: data.scannerMatchingThreshold,
                                         scannerMatchingAlgorithm: data.scannerMatchingAlgorithm === "-" ? "" : data.scannerMatchingAlgorithm,
                                         autoSyncToLocalAccount: data.autoSyncToLocalAccount ?? false,
-                                        autoScanAnime: data.autoScanAnime ?? false,
-                                        autoScanManga: data.autoScanManga ?? false,
                                     },
                                     nakama: {
                                         enabled: data.nakamaEnabled ?? false,
@@ -348,7 +346,6 @@ export default function Page() {
                                         qbittorrentPort: data.qbittorrentPort,
                                         qbittorrentPassword: data.qbittorrentPassword,
                                         qbittorrentUsername: data.qbittorrentUsername,
-                                        qbittorrentDownloadsDir: data.qbittorrentDownloadsDir || "",
                                         qbittorrentTags: data.qbittorrentTags,
                                         transmissionPath: data.transmissionPath,
                                         transmissionHost: data.transmissionHost,
@@ -686,11 +683,6 @@ export default function Page() {
                                                         <Field.Text
                                                             name="qbittorrentPath"
                                                             label="Executable"
-                                                        />
-                                                        <Field.Text
-                                                            name="qbittorrentDownloadsDir"
-                                                            label="Downloads Directory (Docker)"
-                                                            help="Override download directory for Docker qBittorrent. Leave empty to use default destination. Example: /downloads"
                                                         />
                                                         <Field.Text
                                                             name="qbittorrentTags"

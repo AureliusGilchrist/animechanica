@@ -23,7 +23,7 @@ func TestPortForwarding(t *testing.T) {
 }
 
 func TestEncryptJoinCode(t *testing.T) {
-	code, err := EncryptJoinCode("0.0.0.0", 4000, "password")
+	code, err := EncryptJoinCode("127.0.0.1", 4000, "password")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestEncryptJoinCode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if addr != "0.0.0.0:4000" {
+	if addr != "127.0.0.1:4000" {
 		t.Fatal("invalid decrypted code")
 	}
 }

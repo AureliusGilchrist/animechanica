@@ -390,6 +390,7 @@ func (sp *SimulatedPlatform) AddMediaToCollection(ctx context.Context, mIds []in
 		// Try to add as anime first, if it fails, ignore
 		_ = wrapper.AddEntry(mediaID, anilist.MediaListStatusPlanning)
 	}
+
 	return nil
 }
 
@@ -397,19 +398,10 @@ func (sp *SimulatedPlatform) GetStudioDetails(ctx context.Context, studioID int)
 	return sp.client.StudioDetails(ctx, &studioID)
 }
 
-func (sp *SimulatedPlatform) CharacterDetails(ctx context.Context, characterID *int) (*anilist.Character, error) {
-	return sp.client.CharacterDetails(ctx, characterID)
-}
-
-func (sp *SimulatedPlatform) GetCharacter(ctx context.Context, characterID int) (*anilist.Character, error) {
-	return sp.client.CharacterDetails(ctx, &characterID)
-}
-
 func (sp *SimulatedPlatform) GetAnilistClient() anilist.AnilistClient {
 	return sp.client
 }
 
-// ... (rest of the code remains the same)
 func (sp *SimulatedPlatform) GetViewerStats(ctx context.Context) (*anilist.ViewerStats, error) {
 	return nil, errors.New("use a real account to get stats")
 }

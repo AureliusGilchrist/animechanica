@@ -11,7 +11,6 @@ import { __library_viewAtom } from "@/app/(main)/(library)/_lib/library-view.ato
 import { DetailedLibraryView } from "@/app/(main)/(library)/_screens/detailed-library-view"
 import { EmptyLibraryView } from "@/app/(main)/(library)/_screens/empty-library-view"
 import { LibraryView } from "@/app/(main)/(library)/_screens/library-view"
-import { MangaLibraryView } from "@/app/(main)/(library)/_screens/manga-library-view"
 import { PageWrapper } from "@/components/shared/page-wrapper"
 import { ThemeLibraryScreenBannerType, useThemeSettings } from "@/lib/theme/hooks"
 import { useAtom } from "jotai/react"
@@ -103,20 +102,6 @@ export default function Library() {
                         streamingMediaIds={streamingMediaIds}
                         isNakamaLibrary={isNakamaLibrary}
                     />
-                </PageWrapper>}
-                {view === "manga" && <PageWrapper
-                    key="manga"
-                    className="relative 2xl:order-first pb-10 pt-4"
-                    {...{
-                        initial: { opacity: 0, y: 60 },
-                        animate: { opacity: 1, y: 0 },
-                        exit: { opacity: 0, scale: 0.99 },
-                        transition: {
-                            duration: 0.25,
-                        },
-                    }}
-                >
-                    <MangaLibraryView />
                 </PageWrapper>}
             </AnimatePresence>
 

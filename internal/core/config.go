@@ -74,10 +74,10 @@ func NewConfig(options *ConfigOptions, logger *zerolog.Logger) (*Config, error) 
 
 	// Set Seanime's environment variables
 	if os.Getenv("SEANIME_DATA_DIR") != "" {
-		options.DataDir = "/aeternae/library/manga/seanime/"
+		options.DataDir = os.Getenv("SEANIME_DATA_DIR")
 	}
 
-	defaultHost := "0.0.0.0"
+	defaultHost := "127.0.0.1"
 	defaultPort := 43211
 
 	if os.Getenv("SEANIME_SERVER_HOST") != "" {
@@ -116,15 +116,15 @@ func NewConfig(options *ConfigOptions, logger *zerolog.Logger) (*Config, error) 
 	viper.SetDefault("server.useBinaryPath", true)
 	//viper.SetDefault("server.systray", true)
 	viper.SetDefault("database.name", "seanime")
-	viper.SetDefault("web.assetDir", "/aeternae/library/manga/seanime/assets")
-	viper.SetDefault("cache.dir", "/aeternae/library/manga/seanime/cache")
-	viper.SetDefault("cache.transcodeDir", "/aeternae/library/manga/seanime/cache/transcode")
-	viper.SetDefault("manga.downloadDir", "/aeternae/library/manga/seanime")
-	viper.SetDefault("manga.localDir", "/aeternae/library/manga/seanime/local")
-	viper.SetDefault("logs.dir", "/aeternae/library/manga/seanime/logs")
-	viper.SetDefault("offline.dir", "/aeternae/library/manga/seanime/offline")
-	viper.SetDefault("offline.assetDir", "/aeternae/library/manga/seanime/offline/assets")
-	viper.SetDefault("extensions.dir", "/aeternae/library/manga/seanime/extensions")
+	viper.SetDefault("web.assetDir", "$SEANIME_DATA_DIR/assets")
+	viper.SetDefault("cache.dir", "$SEANIME_DATA_DIR/cache")
+	viper.SetDefault("cache.transcodeDir", "$SEANIME_DATA_DIR/cache/transcode")
+	viper.SetDefault("manga.downloadDir", "$SEANIME_DATA_DIR/manga")
+	viper.SetDefault("manga.localDir", "$SEANIME_DATA_DIR/manga-local")
+	viper.SetDefault("logs.dir", "$SEANIME_DATA_DIR/logs")
+	viper.SetDefault("offline.dir", "$SEANIME_DATA_DIR/offline")
+	viper.SetDefault("offline.assetDir", "$SEANIME_DATA_DIR/offline/assets")
+	viper.SetDefault("extensions.dir", "$SEANIME_DATA_DIR/extensions")
 
 	// Create and populate the config file if it doesn't exist
 	if err = createConfigFile(configPath); err != nil {

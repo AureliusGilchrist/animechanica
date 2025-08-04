@@ -115,32 +115,8 @@ func (r *Repository) GetMangaPageContainer(
 
 	var chapterContainer *ChapterContainer
 	if found, _ := r.fileCacher.Get(containerBucket, chapterContainerKey, &chapterContainer); !found {
-		r.logger.Warn().
-			Str("provider", provider).
-			Int("mediaId", mediaId).
-			Str("chapterId", chapterId).
-			Str("containerKey", chapterContainerKey).
-			Msg("manga: Chapter Container not found in cache - attempting to refresh")
-		
-		// Attempt to refresh the chapter container automatically
-		var refreshErr error
-		chapterContainer, refreshErr = r.GetMangaChapterContainer(&GetMangaChapterContainerOptions{
-			Provider: provider,
-			MediaId:  mediaId,
-		})
-		if refreshErr != nil {
-			r.logger.Error().
-				Err(refreshErr).
-				Str("provider", provider).
-				Int("mediaId", mediaId).
-				Str("chapterId", chapterId).
-				Msg("manga: Failed to refresh chapter container")
-			return nil, fmt.Errorf("chapter container not found for provider %s and media %d and failed to refresh: %w", provider, mediaId, refreshErr)
-		}
-		r.logger.Info().
-			Str("provider", provider).
-			Int("mediaId", mediaId).
-			Msg("manga: Successfully refreshed chapter container")
+		r.logger.Error().Msg("manga: Chapter Container not found")
+		return nil, ErrNoChapters
 	}
 
 	// Get the chapter from the container
@@ -153,13 +129,8 @@ func (r *Repository) GetMangaPageContainer(
 	}
 
 	if chapter == nil {
-		r.logger.Error().
-			Str("provider", provider).
-			Int("mediaId", mediaId).
-			Str("chapterId", chapterId).
-			Int("availableChapters", len(chapterContainer.Chapters)).
-			Msg("manga: Chapter not found in container")
-		return nil, fmt.Errorf("chapter %s not found for provider %s and media %d", chapterId, provider, mediaId)
+		r.logger.Error().Msg("manga: Chapter not found")
+		return nil, ErrChapterNotFound
 	}
 
 	// Get the chapter pages
@@ -167,24 +138,13 @@ func (r *Repository) GetMangaPageContainer(
 
 	pages, err = providerExtension.GetProvider().FindChapterPages(chapter.ID)
 	if err != nil {
-		r.logger.Error().
-			Err(err).
-			Str("provider", provider).
-			Int("mediaId", mediaId).
-			Str("chapterId", chapterId).
-			Str("chapterTitle", chapter.Title).
-			Msg("manga: Could not get chapter pages from provider")
-		return nil, fmt.Errorf("failed to fetch pages for chapter %s from provider %s: %w", chapterId, provider, err)
+		r.logger.Error().Err(err).Msg("manga: Could not get chapter pages")
+		return nil, err
 	}
 
 	if pages == nil || len(pages) == 0 {
-		r.logger.Error().
-			Str("provider", provider).
-			Int("mediaId", mediaId).
-			Str("chapterId", chapterId).
-			Str("chapterTitle", chapter.Title).
-			Msg("manga: No pages found for chapter")
-		return nil, fmt.Errorf("no pages found for chapter %s (%s) from provider %s", chapterId, chapter.Title, provider)
+		r.logger.Error().Msg("manga: No pages found")
+		return nil, fmt.Errorf("manga: No pages found")
 	}
 
 	// Overwrite provider just in case

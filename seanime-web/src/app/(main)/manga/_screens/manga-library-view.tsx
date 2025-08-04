@@ -130,9 +130,6 @@ export function FilteredCollectionLists({ collectionList, genres }: {
         return collectionList?.lists?.flatMap(n => n.entries).filter(Boolean) ?? []
     }, [collectionList])
 
-    // Memoize the filtered entries to prevent unnecessary re-renders
-    const memoizedEntries = React.useMemo(() => entries, [entries])
-
     return (
         <PageWrapper
             className="p-4 space-y-8 relative z-[4]"
@@ -151,58 +148,25 @@ export function FilteredCollectionLists({ collectionList, genres }: {
                 <GenreSelector genres={genres} />
             </div>}
 
-            <MediaCardLazyGrid itemCount={memoizedEntries?.length || 0}>
-                {memoizedEntries.map(entry => {
-                    return <MemoizedMangaCard
+            <MediaCardLazyGrid itemCount={entries?.length || 0}>
+                {entries.map(entry => {
+                    return <div
                         key={entry.media?.id}
-                        entry={entry}
-                        isCurrentList={false}
-                        onHover={() => {}} // No hover effect for filtered view
-                    />
+                    >
+                        <MediaEntryCard
+                            media={entry.media!}
+                            listData={entry.listData}
+                            showListDataButton
+                            withAudienceScore={false}
+                            type="manga"
+                        />
+                    </div>
                 })}
             </MediaCardLazyGrid>
         </PageWrapper>
     )
 
 }
-
-// Performance-optimized memoized manga card component to prevent unnecessary re-renders
-const MemoizedMangaCard = memo(({ 
-    entry, 
-    isCurrentList, 
-    onHover 
-}: { 
-    entry: { media?: any; listData?: any; mediaId: number }, 
-    isCurrentList: boolean, 
-    onHover: (image: string) => void 
-}) => {
-    const handleMouseEnter = React.useCallback(() => {
-        if (isCurrentList && entry.media?.bannerImage) {
-            React.startTransition(() => {
-                onHover(entry.media.bannerImage)
-            })
-        }
-    }, [isCurrentList, entry.media?.bannerImage, onHover])
-
-    // Early return if no media data to prevent unnecessary rendering
-    if (!entry.media) {
-        return null
-    }
-
-    return (
-        <div onMouseEnter={handleMouseEnter}>
-            <MediaEntryCard
-                media={entry.media!}
-                listData={entry.listData}
-                showListDataButton
-                withAudienceScore={false}
-                type="manga"
-            />
-        </div>
-    )
-})
-
-MemoizedMangaCard.displayName = 'MemoizedMangaCard'
 
 const CollectionListItem = memo(({ list, storedProviders }: { list: Manga_CollectionList, storedProviders: Record<string, string> }) => {
 
@@ -326,12 +290,24 @@ const CollectionListItem = memo(({ list, storedProviders }: { list: Manga_Collec
 
             <MediaCardLazyGrid itemCount={list.entries?.length ?? 0}>
                 {list.entries?.map(entry => {
-                    return <MemoizedMangaCard
+                    return <div
                         key={entry.media?.id}
-                        entry={entry}
-                        isCurrentList={list.type === "CURRENT"}
-                        onHover={setCurrentHeaderImage}
-                    />
+                        onMouseEnter={() => {
+                            if (list.type === "CURRENT" && entry.media?.bannerImage) {
+                                React.startTransition(() => {
+                                    setCurrentHeaderImage(entry.media?.bannerImage!)
+                                })
+                            }
+                        }}
+                    >
+                        <MediaEntryCard
+                            media={entry.media!}
+                            listData={entry.listData}
+                            showListDataButton
+                            withAudienceScore={false}
+                            type="manga"
+                        />
+                    </div>
                 })}
             </MediaCardLazyGrid>
         </React.Fragment>

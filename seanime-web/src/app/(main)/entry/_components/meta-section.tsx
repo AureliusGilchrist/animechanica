@@ -35,8 +35,6 @@ import { MdOutlineConnectWithoutContact } from "react-icons/md"
 import { SiAnilist } from "react-icons/si"
 import { useNakamaStatus } from "../../_features/nakama/nakama-manager"
 import { PluginAnimePageButtons } from "../../_features/plugin/actions/plugin-actions"
-import { FavoriteButton } from "@/components/shared/favorite-button"
-import { ProgressTracker } from "@/components/shared/progress-tracker"
 
 export function AnimeMetaActionButton({ className, ...rest }: ButtonProps) {
     const ts = useThemeSettings()
@@ -77,14 +75,6 @@ export function MetaSection(props: { entry: Anime_Entry, details: AL_AnimeDetail
                 <SeaLink href={`https://anilist.co/anime/${entry.mediaId}`} target="_blank">
                     <IconButton intent="gray-link" className="px-0" icon={<SiAnilist className="text-lg" />} />
                 </SeaLink>
-
-                <FavoriteButton
-                    mediaId={entry.mediaId}
-                    mediaType="anime"
-                    variant="icon"
-                    size="md"
-                    showText={false}
-                />
 
                 {!!entry?.media?.trailer?.id && <TrailerModal
                     trailerId={entry?.media?.trailer?.id} trigger={
@@ -213,17 +203,6 @@ export function MetaSection(props: { entry: Anime_Entry, details: AL_AnimeDetail
                 </div>
 
                 <NextAiringEpisode media={entry.media} />
-
-                {/* Progress tracking for automatic watch history */}
-                <ProgressTracker
-                    mediaId={entry.mediaId}
-                    mediaType="anime"
-                    episodeNumber={entry.listData?.progress || 0}
-                    onAutoComplete={() => {
-                        // Optionally refresh entry data when auto-completed
-                        console.log('Auto-completed episode for anime:', entry.mediaId)
-                    }}
-                />
 
                 {entry.downloadInfo?.hasInaccurateSchedule && <p
                     className={cn(

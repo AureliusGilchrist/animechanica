@@ -1,8 +1,6 @@
 import { useGetAnilistAnimeDetails } from "@/api/hooks/anilist.hooks"
 import { useGetAnimeEntry } from "@/api/hooks/anime_entries.hooks"
 import { MediaEntryCharactersSection } from "@/app/(main)/_features/media/_components/media-entry-characters-section"
-import { MediaEntryCastSection } from "@/app/(main)/_features/media/_components/media-entry-cast-section"
-import { MediaEntryFeaturedCharacters } from "@/app/(main)/_features/media/_components/media-entry-featured-characters"
 import { MediaEntryPageLoadingDisplay } from "@/app/(main)/_features/media/_components/media-entry-page-loading-display"
 import { useSeaCommandInject } from "@/app/(main)/_features/sea-command/use-inject"
 import { useServerStatus } from "@/app/(main)/_hooks/use-server-status"
@@ -237,12 +235,11 @@ export function AnimeEntryPage() {
                             }}
                         >
                             <div className="h-10" />
-                            <MediaEntryFeaturedCharacters details={animeDetails} />
                             <EpisodeSection
                                 entry={animeEntry}
                                 details={animeDetails}
                                 bottomSection={<>
-                                    <MediaEntryCastSection details={animeDetails} />
+                                    <MediaEntryCharactersSection details={animeDetails} />
                                     <RelationsRecommendationsSection entry={animeEntry} details={animeDetails} />
                                 </>}
                             />
@@ -252,7 +249,7 @@ export function AnimeEntryPage() {
                             <TorrentStreamPage
                                 entry={animeEntry}
                                 bottomSection={<>
-                                    <MediaEntryCastSection details={animeDetails} />
+                                    <MediaEntryCharactersSection details={animeDetails} />
                                     <RelationsRecommendationsSection entry={animeEntry} details={animeDetails} />
                                 </>}
                             />}
@@ -261,7 +258,7 @@ export function AnimeEntryPage() {
                             <DebridStreamPage
                                 entry={animeEntry}
                                 bottomSection={<>
-                                    <MediaEntryCastSection details={animeDetails} />
+                                    <MediaEntryCharactersSection details={animeDetails} />
                                     <RelationsRecommendationsSection entry={animeEntry} details={animeDetails} />
                                 </>}
                             />}

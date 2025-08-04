@@ -27,8 +27,6 @@ export function ScannerModal() {
     const anilistDataOnly = useBoolean(true)
     const skipLockedFiles = useBoolean(true)
     const skipIgnoredFiles = useBoolean(true)
-    const scanAnime = useBoolean(true)
-    const scanManga = useBoolean(true)
 
     const { mutate: scanLibrary, isPending: isScanning } = useScanLocalFiles(() => {
         setOpen(false)
@@ -48,8 +46,6 @@ export function ScannerModal() {
             enhanced: !anilistDataOnly.active,
             skipLockedFiles: skipLockedFiles.active,
             skipIgnoredFiles: skipIgnoredFiles.active,
-            scanAnime: scanAnime.active,
-            scanManga: scanManga.active,
         })
         setOpen(false)
     }
@@ -127,22 +123,6 @@ export function ScannerModal() {
                 <div className="space-y-4" data-scanner-modal-content>
 
                     <AppLayoutStack className="space-y-2">
-                        <h5 className="text-[--muted]">Content types</h5>
-                        <Switch
-                            side="right"
-                            label="Scan anime"
-                            value={scanAnime.active}
-                            onValueChange={v => scanAnime.set(v as boolean)}
-                        />
-                        <Switch
-                            side="right"
-                            label="Scan manga"
-                            value={scanManga.active}
-                            onValueChange={v => scanManga.set(v as boolean)}
-                        />
-
-                        <Separator />
-
                         <h5 className="text-[--muted]">Local files</h5>
                         <Switch
                             side="right"
@@ -190,7 +170,7 @@ export function ScannerModal() {
                     leftIcon={<FiSearch />}
                     loading={isScanning}
                     className="w-full"
-                    disabled={!serverStatus?.settings?.library?.libraryPath || (!scanAnime.active && !scanManga.active)}
+                    disabled={!serverStatus?.settings?.library?.libraryPath}
                 >
                     Scan
                 </Button>

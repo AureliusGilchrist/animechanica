@@ -114,7 +114,7 @@ func addPortMappingIGD(clientFactory func() ([]UPnPClient, error), port int) (st
 			uint16(port),     // NewExternalPort
 			"TCP",            // NewProtocol
 			uint16(port),     // NewInternalPort
-			"0.0.0.0",      // NewInternalClient (localhost)
+			"127.0.0.1",      // NewInternalClient (localhost)
 			true,             // NewEnabled
 			"Seanime Nakama", // NewPortMappingDescription
 			uint32(3600),     // NewLeaseDuration (1 hour)

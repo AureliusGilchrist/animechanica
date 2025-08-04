@@ -3,8 +3,9 @@ package handlers
 import (
 	"context"
 	"errors"
-	"net/http"
-	"seanime/internal/api/anilist"
+	"seanime/internal/database/models"
+	"seanime/internal/platforms/anilist_platform"
+	"seanime/internal/platforms/simulated_platform"
 	"seanime/internal/util"
 	"time"
 
@@ -14,9 +15,9 @@ import (
 
 // HandleLogin
 //
-//	@summary logs in the user by saving the JWT token in the session.
+//	@summary logs in the user by saving the JWT token in the database.
 //	@desc This is called when the JWT token is obtained from AniList after logging in with redirection on the client.
-//	@desc It also fetches the Viewer data from AniList and saves it in the session.
+//	@desc It also fetches the Viewer data from AniList and saves it in the database.
 //	@desc It creates a new handlers.Status and refreshes App modules.
 //	@route /api/v1/auth/login [POST]
 //	@returns handlers.Status
@@ -32,14 +33,11 @@ func (h *Handler) HandleLogin(c echo.Context) error {
 		return h.RespondWithError(c, err)
 	}
 
-	// Get session ID from context
-	sessionID := c.Get("Seanime-Client-Id").(string)
-
-	// Create a temporary AniList client to verify the token
-	tempClient := anilist.NewAnilistClient(b.Token)
+	// Set a new AniList client by passing to JWT token
+	h.App.UpdateAnilistClientToken(b.Token)
 
 	// Get viewer data from AniList
-	getViewer, err := tempClient.GetViewer(context.Background())
+	getViewer, err := h.App.AnilistClient.GetViewer(context.Background())
 	if err != nil {
 		h.App.Logger.Error().Msg("Could not authenticate to AniList")
 		return h.RespondWithError(c, err)
@@ -55,18 +53,31 @@ func (h *Handler) HandleLogin(c echo.Context) error {
 		h.App.Logger.Err(err).Msg("scan: could not save local files")
 	}
 
-	// Create or update session with the token and user data
-	h.App.SessionManager.CreateSession(sessionID, b.Token, getViewer.Viewer.Name, bytes)
+	// Save account data in database
+	_, err = h.App.Database.UpsertAccount(&models.Account{
+		BaseModel: models.BaseModel{
+			ID:        1,
+			UpdatedAt: time.Now(),
+		},
+		Username: getViewer.Viewer.Name,
+		Token:    b.Token,
+		Viewer:   bytes,
+	})
 
-	h.App.Logger.Info().Str("session", sessionID).Str("username", getViewer.Viewer.Name).Msg("app: Authenticated to AniList")
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
 
-	// Don't update global platform - each session will use its own client
+	h.App.Logger.Info().Msg("app: Authenticated to AniList")
+
+	// Update the platform
+	anilistPlatform := anilist_platform.NewAnilistPlatform(h.App.AnilistClient, h.App.Logger)
+	h.App.UpdatePlatform(anilistPlatform)
 
 	// Create a new status
 	status := h.NewStatus(c)
 
-	// Note: We don't refresh global AniList data here since that should be shared
-	// and not tied to individual user sessions
+	h.App.InitOrRefreshAnilistData()
 
 	h.App.InitOrRefreshModules()
 
@@ -76,17 +87,6 @@ func (h *Handler) HandleLogin(c echo.Context) error {
 		h.App.InitOrRefreshMediastreamSettings()
 		h.App.InitOrRefreshDebridSettings()
 	}()
-
-	// Set a secure cookie to indicate authentication (optional, for UI state)
-	cookie := new(http.Cookie)
-	cookie.Name = "Seanime-Auth"
-	cookie.Value = "authenticated"
-	cookie.HttpOnly = false
-	cookie.Expires = time.Now().Add(24 * time.Hour)
-	cookie.Path = "/"
-	cookie.SameSite = http.SameSiteDefaultMode
-	cookie.Secure = false
-	c.SetCookie(cookie)
 
 	// Return new status
 	return h.RespondWithData(c, status)
@@ -102,26 +102,37 @@ func (h *Handler) HandleLogin(c echo.Context) error {
 //	@returns handlers.Status
 func (h *Handler) HandleLogout(c echo.Context) error {
 
-	// Get session ID from context
-	sessionID := c.Get("Seanime-Client-Id").(string)
+	// Update the anilist client
+	h.App.UpdateAnilistClientToken("")
 
-	// Delete the session
-	h.App.SessionManager.DeleteSession(sessionID)
+	// Update the platform
+	simulatedPlatform, err := simulated_platform.NewSimulatedPlatform(h.App.LocalManager, h.App.AnilistClient, h.App.Logger)
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
+	h.App.UpdatePlatform(simulatedPlatform)
 
-	h.App.Logger.Info().Str("session", sessionID).Msg("Logged out of AniList")
+	_, err = h.App.Database.UpsertAccount(&models.Account{
+		BaseModel: models.BaseModel{
+			ID:        1,
+			UpdatedAt: time.Now(),
+		},
+		Username: "",
+		Token:    "",
+		Viewer:   nil,
+	})
 
-	// Remove the auth cookie
-	cookie := new(http.Cookie)
-	cookie.Name = "Seanime-Auth"
-	cookie.Value = ""
-	cookie.HttpOnly = false
-	cookie.Expires = time.Now().Add(-1 * time.Hour) // Expire the cookie
-	cookie.Path = "/"
-	cookie.SameSite = http.SameSiteDefaultMode
-	cookie.Secure = false
-	c.SetCookie(cookie)
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	h.App.Logger.Info().Msg("Logged out of AniList")
 
 	status := h.NewStatus(c)
+
+	h.App.InitOrRefreshModules()
+
+	h.App.InitOrRefreshAnilistData()
 
 	return h.RespondWithData(c, status)
 }

@@ -47,7 +47,6 @@ type AnilistClient interface {
 	ViewerStats(ctx context.Context, interceptors ...clientv2.RequestInterceptor) (*ViewerStats, error)
 	StudioDetails(ctx context.Context, id *int, interceptors ...clientv2.RequestInterceptor) (*StudioDetails, error)
 	GetViewer(ctx context.Context, interceptors ...clientv2.RequestInterceptor) (*GetViewer, error)
-	CharacterDetails(ctx context.Context, id *int, interceptors ...clientv2.RequestInterceptor) (*Character, error)
 	AnimeAiringSchedule(ctx context.Context, ids []*int, season *MediaSeason, seasonYear *int, previousSeason *MediaSeason, previousSeasonYear *int, nextSeason *MediaSeason, nextSeasonYear *int, interceptors ...clientv2.RequestInterceptor) (*AnimeAiringSchedule, error)
 	AnimeAiringScheduleRaw(ctx context.Context, ids []*int, interceptors ...clientv2.RequestInterceptor) (*AnimeAiringScheduleRaw, error)
 }
@@ -233,103 +232,6 @@ func (ac *AnilistClientImpl) StudioDetails(ctx context.Context, id *int, interce
 func (ac *AnilistClientImpl) SearchBaseAnimeByIds(ctx context.Context, ids []*int, page *int, perPage *int, status []*MediaStatus, inCollection *bool, sort []*MediaSort, season *MediaSeason, year *int, genre *string, format *MediaFormat, interceptors ...clientv2.RequestInterceptor) (*SearchBaseAnimeByIds, error) {
 	ac.logger.Debug().Msg("anilist: Searching anime by ids")
 	return ac.Client.SearchBaseAnimeByIds(ctx, ids, page, perPage, status, inCollection, sort, season, year, genre, format, interceptors...)
-}
-
-// CharacterDetailsDocument contains a simplified, reliable GraphQL query for character details
-const CharacterDetailsDocument = `query CharacterDetails($id: Int!) {
-  Character(id: $id) {
-    id
-    name {
-      full
-      native
-      alternative
-    }
-    image {
-      large
-      medium
-    }
-    description
-    gender
-    dateOfBirth {
-      year
-      month
-      day
-    }
-    age
-    bloodType
-    favourites
-    siteUrl
-    media(page: 1, perPage: 25, sort: [POPULARITY_DESC]) {
-      pageInfo {
-        total
-        hasNextPage
-      }
-      edges {
-        node {
-          id
-          title {
-            romaji
-            english
-            native
-          }
-          type
-          format
-          status
-          startDate {
-            year
-          }
-          episodes
-          chapters
-          coverImage {
-            large
-            medium
-            color
-          }
-          averageScore
-          popularity
-          genres
-          isAdult
-        }
-      }
-    }
-  }
-}`
-
-func (ac *AnilistClientImpl) CharacterDetails(ctx context.Context, id *int, interceptors ...clientv2.RequestInterceptor) (*Character, error) {
-	if id == nil {
-		return nil, errors.New("character ID cannot be nil")
-	}
-
-	ac.logger.Debug().Int("characterId", *id).Msg("anilist: Fetching character details")
-
-	// Use the character ID directly as an integer, not a pointer
-	vars := map[string]any{
-		"id": *id,
-	}
-
-	var res struct {
-		Character *Character `json:"Character"`
-	}
-
-	// Make the GraphQL request
-	err := ac.Client.Client.Post(ctx, "CharacterDetails", CharacterDetailsDocument, &res, vars, interceptors...)
-	if err != nil {
-		ac.logger.Error().Err(err).Int("characterId", *id).Msg("anilist: Failed to fetch character details")
-		return nil, fmt.Errorf("failed to fetch character details: %w", err)
-	}
-
-	if res.Character == nil {
-		ac.logger.Warn().Int("characterId", *id).Msg("anilist: Character not found")
-		return nil, fmt.Errorf("character with ID %d not found", *id)
-	}
-
-	characterName := "unknown"
-	if res.Character.Name != nil && res.Character.Name.Full != nil {
-		characterName = *res.Character.Name.Full
-	}
-
-	ac.logger.Debug().Int("characterId", *id).Str("characterName", characterName).Msg("anilist: Successfully fetched character details")
-	return res.Character, nil
 }
 
 func (ac *AnilistClientImpl) AnimeAiringSchedule(ctx context.Context, ids []*int, season *MediaSeason, seasonYear *int, previousSeason *MediaSeason, previousSeasonYear *int, nextSeason *MediaSeason, nextSeasonYear *int, interceptors ...clientv2.RequestInterceptor) (*AnimeAiringSchedule, error) {

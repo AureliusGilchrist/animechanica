@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"seanime/internal/events"
 	"seanime/internal/manga"
 	chapter_downloader "seanime/internal/manga/downloader"
@@ -31,32 +30,18 @@ func (h *Handler) HandleDownloadMangaChapters(c echo.Context) error {
 
 	h.App.WSEventManager.SendEvent(events.InfoToast, "Adding chapters to download queue...")
 
-	// Get manga title for series-based directory structure
-	mangaTitle, err := h.getMangaTitleForDownload(c, b.MediaId)
-	if err != nil {
-		h.App.Logger.Warn().Err(err).Msg("Failed to get manga title, using fallback")
-		mangaTitle = fmt.Sprintf("Manga_%d", b.MediaId)
-	}
-
-	// Get provider-specific rate limit for chapter queuing (to prevent 429 errors)
-	queueRateLimit := getProviderChapterQueueRateLimit(b.Provider)
-
-	// Add all chapters to the download queue with retry mechanism
-	for i, chapterId := range b.ChapterIds {
-		err := h.retryChapterQueue(manga.DownloadChapterOptions{
-			Provider:   b.Provider,
-			MediaId:    b.MediaId,
-			ChapterId:  chapterId,
-			StartNow:   b.StartNow,
-			MangaTitle: mangaTitle,
-		}, fmt.Sprintf("Chapter %s", chapterId))
+	// Add chapters to the download queue
+	for _, chapterId := range b.ChapterIds {
+		err := h.App.MangaDownloader.DownloadChapter(manga.DownloadChapterOptions{
+			Provider:  b.Provider,
+			MediaId:   b.MediaId,
+			ChapterId: chapterId,
+			StartNow:  b.StartNow,
+		})
 		if err != nil {
-			return h.RespondWithError(c, fmt.Errorf("failed to queue chapter %s after retries: %w", chapterId, err))
+			return h.RespondWithError(c, err)
 		}
-		// Apply minimal rate limiting between chapter queuing to prevent 429 errors
-		if i < len(b.ChapterIds)-1 {
-			time.Sleep(queueRateLimit)
-		}
+		time.Sleep(400 * time.Millisecond) // Sleep to avoid rate limiting
 	}
 
 	return h.RespondWithData(c, true)
@@ -208,75 +193,18 @@ func (h *Handler) HandleDeleteMangaDownloadedChapters(c echo.Context) error {
 //	@route /api/v1/manga/downloads [GET]
 //	@returns []manga.DownloadListItem
 func (h *Handler) HandleGetMangaDownloadsList(c echo.Context) error {
-	sessionID := c.Get("Seanime-Client-Id").(string)
 
-	mangaCollection, err := h.App.GetMangaCollectionForSession(sessionID, false)
+	mangaCollection, err := h.App.GetMangaCollection(false)
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
 
 	res, err := h.App.MangaDownloader.NewDownloadList(&manga.NewDownloadListOptions{
 		MangaCollection: mangaCollection,
-		AnilistPlatform: h.App.AnilistPlatform,
 	})
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
 
 	return h.RespondWithData(c, res)
-}
-
-// retryChapterQueue attempts to queue a chapter with exponential backoff retry (15s, 30s, 1min)
-func (h *Handler) retryChapterQueue(options manga.DownloadChapterOptions, chapterName string) error {
-	retryDelays := []time.Duration{
-		15 * time.Second,  // First retry after 15 seconds
-		30 * time.Second,  // Second retry after 30 seconds
-		60 * time.Second,  // Third retry after 1 minute
-	}
-
-	// First attempt
-	err := h.App.MangaDownloader.DownloadChapter(options)
-	if err == nil {
-		return nil
-	}
-
-	h.App.WSEventManager.SendEvent(events.InfoToast, fmt.Sprintf("Chapter %s failed to queue, retrying...", chapterName))
-
-	// Retry attempts with exponential backoff
-	for attempt, delay := range retryDelays {
-		h.App.WSEventManager.SendEvent(events.InfoToast, fmt.Sprintf("Retrying chapter %s in %v (attempt %d/3)...", chapterName, delay, attempt+1))
-		time.Sleep(delay)
-
-		err = h.App.MangaDownloader.DownloadChapter(options)
-		if err == nil {
-			h.App.WSEventManager.SendEvent(events.SuccessToast, fmt.Sprintf("Chapter %s queued successfully after retry", chapterName))
-			return nil
-		}
-
-		h.App.WSEventManager.SendEvent(events.InfoToast, fmt.Sprintf("Chapter %s retry %d failed: %v", chapterName, attempt+1, err))
-	}
-
-	// All retries failed
-	return fmt.Errorf("failed after 3 retries: %w", err)
-}
-
-// getProviderChapterQueueRateLimit returns the rate limiting delay for queuing chapters from different providers
-// This prevents 429 "Too Many Requests" errors when fetching chapter page lists
-func getProviderChapterQueueRateLimit(provider string) time.Duration {
-	switch provider {
-	case "weebcentral":
-		return 500 * time.Millisecond // WeebCentral has strict rate limits
-	case "mangadx":
-		return 300 * time.Millisecond // MangaDx has moderate rate limits
-	case "comick":
-		return 200 * time.Millisecond
-	case "mangafire":
-		return 250 * time.Millisecond
-	case "manganato":
-		return 150 * time.Millisecond
-	case "mangapill":
-		return 100 * time.Millisecond
-	default:
-		return 200 * time.Millisecond // Default rate limit
-	}
 }

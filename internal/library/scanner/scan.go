@@ -3,7 +3,6 @@ package scanner
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"seanime/internal/api/anilist"
 	"seanime/internal/api/metadata"
 	"seanime/internal/events"
@@ -14,7 +13,6 @@ import (
 	"seanime/internal/platforms/platform"
 	"seanime/internal/util"
 	"seanime/internal/util/limiter"
-	"strings"
 	"sync"
 	"time"
 
@@ -33,8 +31,6 @@ type Scanner struct {
 	ExistingLocalFiles []*anime.LocalFile
 	SkipLockedFiles    bool
 	SkipIgnoredFiles   bool
-	ScanAnime          bool
-	ScanManga          bool
 	ScanSummaryLogger  *summary.ScanSummaryLogger
 	ScanLogger         *ScanLogger
 	MetadataProvider   metadata.Provider
@@ -55,6 +51,7 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 
 	completeAnimeCache := anilist.NewCompleteAnimeCache()
 
+	// Create a new Anilist rate limiter
 	anilistRateLimiter := limiter.NewAnilistLimiter()
 
 	if scn.ScanSummaryLogger == nil {
@@ -62,10 +59,10 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 	}
 
 	scn.Logger.Debug().Msg("scanner: Starting scan")
-	startTime := time.Now()
+	scn.WSEventManager.SendEvent(events.EventScanProgress, 10)
+	scn.WSEventManager.SendEvent(events.EventScanStatus, "Retrieving local files...")
 
-	// --- Profiling ---
-	dirScanStart := time.Now()
+	startTime := time.Now()
 
 	// Invoke ScanStarted hook
 	event := &ScanStartedEvent{
@@ -160,10 +157,6 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 	_ = hook.GlobalHookManager.OnScanFilePathsRetrieved().Trigger(fpEvent)
 	paths = fpEvent.FilePaths
 
-	// --- Profiling ---
-	dirScanDuration := time.Since(dirScanStart)
-	scn.Logger.Info().Dur("duration", dirScanDuration).Msg("Directory scan completed")
-
 	// +---------------------+
 	// |    Local files      |
 	// +---------------------+
@@ -184,7 +177,6 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 	}
 
 	// Create local files from paths (skipping skipped files)
-	localFileStart := time.Now()
 	localFiles = lop.Map(paths, func(path string, _ int) *anime.LocalFile {
 		if _, ok := skippedLfs[util.NormalizePath(path)]; !ok {
 			// Create a new local file
@@ -198,30 +190,6 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 	localFiles = lo.Filter(localFiles, func(lf *anime.LocalFile, _ int) bool {
 		return lf != nil
 	})
-
-	// Filter files based on scan toggles
-	if !scn.ScanAnime || !scn.ScanManga {
-		localFiles = lo.Filter(localFiles, func(lf *anime.LocalFile, _ int) bool {
-			isAnime := scn.isAnimeFile(lf.Path)
-			isManga := scn.isMangaFile(lf.Path)
-			
-			// Include file if:
-			// - It's anime and anime scanning is enabled
-			// - It's manga and manga scanning is enabled
-			// - It's neither (fallback to anime scanning for unknown files)
-			if isAnime {
-				return scn.ScanAnime
-			} else if isManga {
-				return scn.ScanManga
-			} else {
-				// Fallback: treat unknown files as anime
-				return scn.ScanAnime
-			}
-		})
-	}
-
-	localFileDuration := time.Since(localFileStart)
-	scn.Logger.Info().Dur("duration", localFileDuration).Msg("Local file objects created")
 
 	// Invoke ScanLocalFilesParsed hook
 	parsedEvent := &ScanLocalFilesParsedEvent{
@@ -303,7 +271,6 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 	// +---------------------+
 
 	// Fetch media needed for matching
-	mediaFetchStart := time.Now()
 	mf, err := NewMediaFetcher(ctx, &MediaFetcherOptions{
 		Enhanced:               scn.Enhanced,
 		Platform:               scn.Platform,
@@ -318,8 +285,6 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 	if err != nil {
 		return nil, err
 	}
-	mediaFetchDuration := time.Since(mediaFetchStart)
-	scn.Logger.Info().Dur("duration", mediaFetchDuration).Msg("Media fetch completed")
 
 	scn.WSEventManager.SendEvent(events.EventScanProgress, 40)
 	scn.WSEventManager.SendEvent(events.EventScanStatus, "Matching local files...")
@@ -356,7 +321,6 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 
 	scn.WSEventManager.SendEvent(events.EventScanProgress, 60)
 
-	matchStart := time.Now()
 	err = matcher.MatchLocalFilesWithMedia()
 	if err != nil {
 		// If the matcher received no local files, return an error
@@ -367,8 +331,6 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 		}
 		return nil, err
 	}
-	matchDuration := time.Since(matchStart)
-	scn.Logger.Info().Dur("duration", matchDuration).Msg("Matching completed")
 
 	scn.WSEventManager.SendEvent(events.EventScanProgress, 70)
 	scn.WSEventManager.SendEvent(events.EventScanStatus, "Hydrating metadata...")
@@ -378,7 +340,6 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 	// +---------------------+
 
 	// Create a new hydrator
-	hydrateStart := time.Now()
 	hydrator := &FileHydrator{
 		AllMedia:           mc.NormalizedMedia,
 		LocalFiles:         localFiles,
@@ -391,8 +352,8 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 		ScanSummaryLogger:  scn.ScanSummaryLogger,
 	}
 	hydrator.HydrateMetadata()
-	hydrateDuration := time.Since(hydrateStart)
-	scn.Logger.Info().Dur("duration", hydrateDuration).Msg("Metadata hydration completed")
+
+	scn.WSEventManager.SendEvent(events.EventScanProgress, 80)
 
 	// +---------------------+
 	// |  Add missing media  |
@@ -456,66 +417,5 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 	hook.GlobalHookManager.OnScanCompleted().Trigger(completedEvent)
 	localFiles = completedEvent.LocalFiles
 
-	// --- Profiling ---
-	endTime := time.Now()
-	totalDuration := endTime.Sub(startTime)
-	scn.Logger.Info().Dur("duration", totalDuration).Msg("Total scan completed")
-
 	return localFiles, nil
-}
-
-// isAnimeFile determines if a file is likely an anime file based on extension and path patterns
-func (scn *Scanner) isAnimeFile(filePath string) bool {
-	ext := strings.ToLower(filepath.Ext(filePath))
-	path := strings.ToLower(filePath)
-	
-	// Video file extensions are typically anime
-	videoExts := []string{".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".ts", ".m2ts"}
-	for _, videoExt := range videoExts {
-		if ext == videoExt {
-			return true
-		}
-	}
-	
-	// Check for anime-related keywords in path
-	animeKeywords := []string{"anime", "episode", "ep", "season", "series"}
-	for _, keyword := range animeKeywords {
-		if strings.Contains(path, keyword) {
-			return true
-		}
-	}
-	
-	return false
-}
-
-// isMangaFile determines if a file is likely a manga file based on extension and path patterns
-func (scn *Scanner) isMangaFile(filePath string) bool {
-	ext := strings.ToLower(filepath.Ext(filePath))
-	path := strings.ToLower(filePath)
-	
-	// Image and archive file extensions are typically manga
-	imageExts := []string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
-	archiveExts := []string{".cbz", ".cbr", ".zip", ".rar", ".7z", ".tar", ".gz"}
-	
-	for _, imgExt := range imageExts {
-		if ext == imgExt {
-			return true
-		}
-	}
-	
-	for _, archExt := range archiveExts {
-		if ext == archExt {
-			return true
-		}
-	}
-	
-	// Check for manga-related keywords in path
-	mangaKeywords := []string{"manga", "chapter", "ch", "volume", "vol"}
-	for _, keyword := range mangaKeywords {
-		if strings.Contains(path, keyword) {
-			return true
-		}
-	}
-	
-	return false
 }

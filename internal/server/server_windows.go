@@ -47,7 +47,7 @@ func onReady(webFS *embed.FS, app *core.App, flags core.SeanimeFlags, selfupdate
 
 		// Menu items
 		systray.AddMenuItem("Seanime v"+constants.Version, "Seanime version")
-		mWeb := systray.AddMenuItem(app.Config.GetServerURI("0.0.0.0"), "Open web interface")
+		mWeb := systray.AddMenuItem(app.Config.GetServerURI("127.0.0.1"), "Open web interface")
 		mOpenLibrary := systray.AddMenuItem("Open Anime Library", "Open anime library")
 		mOpenDataDir := systray.AddMenuItem("Open Data Directory", "Open data directory")
 		mOpenLogsDir := systray.AddMenuItem("Open Log Directory", "Open log directory")
@@ -65,7 +65,7 @@ func onReady(webFS *embed.FS, app *core.App, flags core.SeanimeFlags, selfupdate
 			for {
 				select {
 				case <-mWeb.ClickedCh:
-					_ = browser.OpenURL(app.Config.GetServerURI("0.0.0.0"))
+					_ = browser.OpenURL(app.Config.GetServerURI("127.0.0.1"))
 				case <-mOpenLibrary.ClickedCh:
 					handlers.OpenDirInExplorer(app.LibraryDir)
 				case <-mOpenDataDir.ClickedCh:

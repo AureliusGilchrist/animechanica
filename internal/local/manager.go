@@ -46,10 +46,12 @@ type Manager interface {
 	// GetSyncer returns the syncer (used to synchronize the anime and manga snapshots in the local database).
 	GetSyncer() *Syncer
 	// TrackAnime adds an anime to track for offline use.
+	// It checks that the anime is currently in the user's anime collection.
 	TrackAnime(mId int) error
 	// UntrackAnime removes the anime from tracking.
 	UntrackAnime(mId int) error
 	// TrackManga adds a manga to track for offline use.
+	// It checks that the manga is currently in the user's manga collection.
 	TrackManga(mId int) error
 	// UntrackManga removes a manga from tracking.
 	UntrackManga(mId int) error
@@ -264,6 +266,7 @@ func (m *ManagerImpl) UpdateLocalMangaCollection(mc *anilist.MangaCollection) {
 }
 
 // TrackAnime adds an anime to track.
+// It checks that the anime is currently in the user's anime collection.
 // The anime should have local files, or else ManagerImpl.Synchronize will remove it from tracking.
 func (m *ManagerImpl) TrackAnime(mId int) error {
 
@@ -272,6 +275,17 @@ func (m *ManagerImpl) TrackAnime(mId int) error {
 	s := &TrackedMedia{
 		MediaId: mId,
 		Type:    AnimeType,
+	}
+
+	// Check if the anime is in the user's anime collection
+	if m.animeCollection.IsAbsent() {
+		m.logger.Error().Msg("local manager: Anime collection not set")
+		return fmt.Errorf("anime collection not set")
+	}
+
+	if _, found := m.animeCollection.MustGet().GetListEntryFromAnimeId(mId); !found {
+		m.logger.Error().Msgf("local manager: Anime %d not found in user's anime collection", mId)
+		return fmt.Errorf("anime is not in AniList collection")
 	}
 
 	if _, found := m.localDb.GetTrackedMedia(mId, AnimeType); found {
@@ -309,6 +323,7 @@ func (m *ManagerImpl) UntrackAnime(mId int) error {
 //----------------------------------------------------------------------------------------------------------------------------------------------------
 
 // TrackManga adds a manga to track.
+// It checks that the manga is currently in the user's manga collection.
 // The manga should have downloaded chapter containers, or else ManagerImpl.Synchronize will remove it from tracking.
 func (m *ManagerImpl) TrackManga(mId int) error {
 
@@ -317,6 +332,17 @@ func (m *ManagerImpl) TrackManga(mId int) error {
 	s := &TrackedMedia{
 		MediaId: mId,
 		Type:    MangaType,
+	}
+
+	// Check if the manga is in the user's manga collection
+	if m.mangaCollection.IsAbsent() {
+		m.logger.Error().Msg("local manager: Manga collection not set")
+		return fmt.Errorf("manga collection not set")
+	}
+
+	if _, found := m.mangaCollection.MustGet().GetListEntryFromMangaId(mId); !found {
+		m.logger.Error().Msgf("local manager: Manga %d not found in user's manga collection", mId)
+		return fmt.Errorf("manga is not in AniList collection")
 	}
 
 	if _, found := m.localDb.GetTrackedMedia(mId, MangaType); found {

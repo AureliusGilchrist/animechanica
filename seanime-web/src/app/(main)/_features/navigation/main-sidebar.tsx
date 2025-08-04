@@ -208,14 +208,6 @@ export function MainSidebar() {
                     >{activeTorrentCount.downloading + activeTorrentCount.paused}</Badge>
                     : undefined,
             }] : [],
-        // En Masse Downloader tab - below Torrent's List as requested
-        {
-            id: "en-masse-downloader",
-            iconType: FaBookReader,
-            name: "En Masse Downloader",
-            href: "/en-masse-downloader",
-            isCurrent: pathname === "/en-masse-downloader",
-        },
         ...(serverStatus?.debridSettings?.enabled && !!serverStatus?.debridSettings?.provider) ? [{
             id: "debrid",
             iconType: HiOutlineServerStack,

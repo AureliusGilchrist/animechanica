@@ -18,8 +18,6 @@ import { ThemeMediaPageInfoBoxSize, useThemeSettings } from "@/lib/theme/hooks"
 import React from "react"
 import { SiAnilist } from "react-icons/si"
 import { PluginMangaPageButtons } from "../../_features/plugin/actions/plugin-actions"
-import { FavoriteButton } from "@/components/shared/favorite-button"
-import { ProgressTracker } from "@/components/shared/progress-tracker"
 
 
 export function MetaSection(props: { entry: Manga_Entry | undefined, details: AL_MangaDetailsById_Media | undefined }) {
@@ -81,31 +79,12 @@ export function MetaSection(props: { entry: Manga_Entry | undefined, details: AL
                         <IconButton intent="gray-link" className="px-0" icon={<SiAnilist className="text-lg" />} />
                     </SeaLink>
 
-                    <FavoriteButton
-                        mediaId={entry.mediaId}
-                        mediaType="manga"
-                        variant="icon"
-                        size="md"
-                        showText={false}
-                    />
-
                     {ts.mediaPageBannerInfoBoxSize !== ThemeMediaPageInfoBoxSize.Fluid && <div className="flex-1 hidden lg:flex"></div>}
 
                     <MediaSyncTrackButton mediaId={entry.mediaId} type="manga" size="md" />
 
                     <PluginMangaPageButtons media={entry.media} />
                 </div>
-
-                {/* Progress tracking for automatic read history */}
-                <ProgressTracker
-                    mediaId={entry.mediaId}
-                    mediaType="manga"
-                    chapterNumber={entry.listData?.progress || 0}
-                    onAutoComplete={() => {
-                        // Optionally refresh entry data when auto-completed
-                        console.log('Auto-completed chapter for manga:', entry.mediaId)
-                    }}
-                />
 
             </MediaPageHeaderDetailsContainer>
         </MediaPageHeader>

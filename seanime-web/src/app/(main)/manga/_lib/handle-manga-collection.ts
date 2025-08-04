@@ -39,16 +39,9 @@ export function useHandleMangaCollection() {
     const router = useRouter()
     const { data, isLoading, isError } = useGetMangaCollection()
 
-    // SCAN-FIRST APPROACH: Wait for local manga scan, then use cached AniList metadata
-    // This avoids expensive API calls and matches anime library performance
-    
-    // Step 1: Get manga collection from cache (fast - no API calls)
-    // Step 2: Extensions are only needed for advanced features, not basic library loading
-    // const { data: _extensions } = useListMangaProviderExtensions() // Disabled for performance
-    const _extensions = undefined // Use cached extensions data when needed
-    
-    // Step 3: Latest chapter numbers will be computed from local scan data
-    const latestChapterNumbers = undefined // Will be populated from local scan results
+    // const { data: chapterCounts } = useGetMangaChapterCountMap()
+    const { data: latestChapterNumbers } = useGetMangaLatestChapterNumbersMap()
+    const { data: _extensions } = useListMangaProviderExtensions()
 
     const { mangaLibraryCollectionDefaultSorting } = useThemeSettings()
 

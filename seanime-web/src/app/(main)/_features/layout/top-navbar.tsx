@@ -20,7 +20,6 @@ import React from "react"
 import { FaDownload } from "react-icons/fa"
 import { IoReload } from "react-icons/io5"
 import { PluginSidebarTray } from "../plugin/tray/plugin-sidebar-tray"
-import { RibbonLibrarySwitcher } from "./ribbon-library-switcher"
 
 type TopNavbarProps = {
     children?: React.ReactNode
@@ -50,7 +49,6 @@ export function TopNavbar(props: TopNavbarProps) {
                     <div data-top-navbar-content className="flex items-center w-full gap-3">
                         <AppSidebarTrigger />
                         {!isOffline ? <TopMenu /> : <OfflineTopMenu />}
-                        <RibbonLibrarySwitcher />
                         <PlaybackManagerProgressTrackingButton />
                         <ManualProgressTrackingButton />
                         <div data-top-navbar-content-separator className="flex flex-1"></div>

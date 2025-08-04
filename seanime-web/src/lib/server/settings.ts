@@ -54,7 +54,6 @@ export const settingsSchema = z.object({
     qbittorrentPort: z.number(),
     qbittorrentUsername: z.string().optional().default(""),
     qbittorrentPassword: z.string().optional().default(""),
-    qbittorrentDownloadsDir: z.string().optional().default(""),
     qbittorrentTags: z.string().optional().default(""),
     transmissionPath: z.string().optional().default(""),
     transmissionHost: z.string().optional().default(""),
@@ -95,8 +94,6 @@ export const settingsSchema = z.object({
     scannerMatchingThreshold: z.number().optional().default(0.5),
     scannerMatchingAlgorithm: z.string().optional().default(""),
     autoSyncToLocalAccount: z.boolean().optional().default(false),
-    autoScanAnime: z.boolean().optional().default(false),
-    autoScanManga: z.boolean().optional().default(false),
     nakamaIsHost: z.boolean().optional().default(false),
     nakamaHostPassword: z.string().optional().default(""),
     nakamaRemoteServerURL: z.string().optional().default(""),
@@ -133,8 +130,6 @@ export const getDefaultSettings = (data: z.infer<typeof gettingStartedSchema>): 
         scannerMatchingThreshold: 0,
         scannerMatchingAlgorithm: "",
         autoSyncToLocalAccount: false,
-        autoScanAnime: false,
-        autoScanManga: false,
     },
     nakama: {
         enabled: false,
@@ -185,7 +180,6 @@ export const getDefaultSettings = (data: z.infer<typeof gettingStartedSchema>): 
         qbittorrentPort: data.qbittorrentPort,
         qbittorrentPassword: data.qbittorrentPassword,
         qbittorrentUsername: data.qbittorrentUsername,
-        qbittorrentDownloadsDir: "",
         qbittorrentTags: "",
         transmissionPath: data.transmissionPath,
         transmissionHost: data.transmissionHost,
@@ -228,17 +222,15 @@ export function useDefaultSettingsPaths() {
             }
         },
         getDefaultQBittorrentPath: (os: string) => {
-            // Note: Return empty string to prefer Docker/external qBittorrent over local binary
-            // Users can manually set the path if they want to use a local binary
             switch (os) {
                 case "windows":
-                    return "" // Empty to encourage Docker usage, can be set to "C:/Program Files/qBittorrent/qbittorrent.exe" for local
+                    return "C:/Program Files/qBittorrent/qbittorrent.exe"
                 case "linux":
-                    return "" // Empty to encourage Docker usage, can be set to "/usr/bin/qbittorrent" for local
+                    return "/usr/bin/qbittorrent" // Default path for Client on most Linux distributions
                 case "darwin":
-                    return "" // Empty to encourage Docker usage, can be set to "/Applications/qbittorrent.app/Contents/MacOS/qbittorrent" for local
+                    return "/Applications/qbittorrent.app/Contents/MacOS/qbittorrent" // Default path for Client on macOS
                 default:
-                    return ""
+                    return "C:/Program Files/qBittorrent/qbittorrent.exe"
             }
         },
         getDefaultTransmissionPath: (os: string) => {

@@ -1,11 +1,9 @@
 package manga
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"seanime/internal/api/anilist"
 	"seanime/internal/database/db"
 	"seanime/internal/database/models"
@@ -13,17 +11,12 @@ import (
 	"seanime/internal/hook"
 	chapter_downloader "seanime/internal/manga/downloader"
 	manga_providers "seanime/internal/manga/providers"
-	"seanime/internal/platforms/platform"
 	"seanime/internal/util"
 	"seanime/internal/util/filecache"
-	"seanime/internal/util/result"
 	"sync"
 
 	"github.com/rs/zerolog"
 )
-
-// Global cache for downloaded manga metadata to minimize AniList API calls
-var downloadedMangaCache = result.NewCache[int, *anilist.BaseManga]()
 
 type (
 	Downloader struct {
@@ -34,7 +27,6 @@ type (
 		chapterDownloader *chapter_downloader.Downloader
 		repository        *Repository
 		filecacher        *filecache.Cacher
-		indexCache        *IndexCache // Cache for faster manga indexing
 
 		mediaMap   *MediaMap // Refreshed on start and after each download
 		mediaMapMu sync.RWMutex
@@ -79,24 +71,16 @@ type (
 	}
 
 	DownloadChapterOptions struct {
-		Provider   string
-		MediaId    int
-		ChapterId  string
-		StartNow   bool
-		MangaTitle string // Optional field for series-based directory naming
+		Provider  string
+		MediaId   int
+		ChapterId string
+		StartNow  bool
 	}
 )
 
 func NewDownloader(opts *NewDownloaderOptions) *Downloader {
 	_ = os.MkdirAll(opts.DownloadDir, os.ModePerm)
 	filecacher, _ := filecache.NewCacher(opts.DownloadDir)
-
-	// Initialize index cache for faster manga loading
-	indexCache := NewIndexCache(IndexCacheOptions{
-		Logger:      opts.Logger,
-		CacheDir:    filepath.Join(opts.DownloadDir, ".cache"),
-		DownloadDir: opts.DownloadDir,
-	})
 
 	d := &Downloader{
 		logger:         opts.Logger,
@@ -106,7 +90,6 @@ func NewDownloader(opts *NewDownloaderOptions) *Downloader {
 		repository:     opts.Repository,
 		mediaMap:       new(MediaMap),
 		filecacher:     filecacher,
-		indexCache:     indexCache,
 		isOffline:      opts.IsOffline,
 	}
 
@@ -201,16 +184,13 @@ func (r *Repository) getChapterContainerFromPermanentFilecache(provider string, 
 // It fetches the chapter pages by using Repository.GetMangaPageContainer
 // and invokes the chapter_downloader.Downloader 'Download' method to add the chapter to the download queue.
 func (d *Downloader) DownloadChapter(opts DownloadChapterOptions) error {
-	d.logger.Info().Msgf("[DownloadChapter] Queuing chapter: Provider=%s MediaId=%d ChapterId=%s", opts.Provider, opts.MediaId, opts.ChapterId)
 
 	if d.isOffline != nil && *d.isOffline {
-		d.logger.Error().Msg("[DownloadChapter] Manga downloader is in offline mode")
 		return errors.New("manga downloader: Manga downloader is in offline mode")
 	}
 
 	chapterContainer, found := d.repository.getChapterContainerFromFilecache(opts.Provider, opts.MediaId)
 	if !found {
-		d.logger.Error().Msgf("[DownloadChapter] Chapters not found in filecache for Provider=%s MediaId=%d", opts.Provider, opts.MediaId)
 		return errors.New("chapters not found")
 	}
 
@@ -218,26 +198,22 @@ func (d *Downloader) DownloadChapter(opts DownloadChapterOptions) error {
 	// e.g. Wind-Breaker$0062
 	chapter, ok := chapterContainer.GetChapter(opts.ChapterId)
 	if !ok {
-		d.logger.Error().Msgf("[DownloadChapter] Chapter not found in container: ChapterId=%s", opts.ChapterId)
 		return errors.New("chapter not found")
 	}
 
 	// Fetch the chapter pages
 	pageContainer, err := d.repository.GetMangaPageContainer(opts.Provider, opts.MediaId, opts.ChapterId, false, &[]bool{false}[0])
 	if err != nil {
-		d.logger.Error().Err(err).Msgf("[DownloadChapter] Failed to get page container: Provider=%s MediaId=%d ChapterId=%s", opts.Provider, opts.MediaId, opts.ChapterId)
 		return err
 	}
 
 	// Add the chapter to the download queue
-	d.logger.Info().Msgf("[DownloadChapter] Adding chapter to queue: Provider=%s MediaId=%d ChapterId=%s", opts.Provider, opts.MediaId, opts.ChapterId)
 	return d.chapterDownloader.AddToQueue(chapter_downloader.DownloadOptions{
 		DownloadID: chapter_downloader.DownloadID{
 			Provider:      opts.Provider,
 			MediaId:       opts.MediaId,
 			ChapterId:     opts.ChapterId,
 			ChapterNumber: manga_providers.GetNormalizedChapter(chapter.Chapter),
-			MangaTitle:    opts.MangaTitle,
 		},
 		Pages: pageContainer.Pages,
 	})
@@ -304,35 +280,11 @@ func (d *Downloader) StopChapterDownloadQueue() {
 	d.chapterDownloader.Stop()
 }
 
-// InvalidateMangaIndexCache invalidates the manga index cache
-// This should be called when manga is added or removed to ensure fresh data
-func (d *Downloader) InvalidateMangaIndexCache() error {
-	d.logger.Info().Msg("manga downloader: Invalidating index cache")
-	return d.indexCache.InvalidateCache()
-}
-
-// RefreshMangaIndex forces a refresh of the manga index, bypassing cache
-func (d *Downloader) RefreshMangaIndex() {
-	d.logger.Info().Msg("manga downloader: Forcing manga index refresh")
-	// Invalidate cache first
-	if err := d.indexCache.InvalidateCache(); err != nil {
-		d.logger.Error().Err(err).Msg("manga downloader: Failed to invalidate cache")
-	}
-	// Trigger fresh scan
-	go d.hydrateMediaMap()
-}
-
-// GetMangaIndexCacheStats returns statistics about the manga index cache
-func (d *Downloader) GetMangaIndexCacheStats() map[string]interface{} {
-	return d.indexCache.GetCacheStats()
-}
-
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 type (
 	NewDownloadListOptions struct {
 		MangaCollection *anilist.MangaCollection
-		AnilistPlatform platform.Platform
 	}
 
 	DownloadListItem struct {
@@ -345,7 +297,6 @@ type (
 )
 
 // NewDownloadList returns a list of DownloadListItem for the client to display.
-// Updated to fetch AniList metadata for manga not in user's collection to ensure visibility.
 func (d *Downloader) NewDownloadList(opts *NewDownloadListOptions) (ret []*DownloadListItem, err error) {
 	defer util.HandlePanicInModuleWithError("manga/NewDownloadList", &err)
 
@@ -354,36 +305,24 @@ func (d *Downloader) NewDownloadList(opts *NewDownloadListOptions) (ret []*Downl
 	ret = make([]*DownloadListItem, 0)
 
 	for mId, data := range *mm {
-		var media *anilist.BaseManga
+		listEntry, ok := opts.MangaCollection.GetListEntryFromMangaId(mId)
+		if !ok {
+			ret = append(ret, &DownloadListItem{
+				MediaId:      mId,
+				Media:        nil,
+				DownloadData: data,
+			})
+			continue
+		}
 
-		// First check if manga is in user's collection (fast lookup)
-		if listEntry, ok := opts.MangaCollection.GetListEntryFromMangaId(mId); ok {
-			// Manga is in user's collection, use the existing media data (no API call needed)
-			media = listEntry.GetMedia()
-		} else {
-			// Check if we have cached metadata
-			if cached, found := downloadedMangaCache.Get(mId); found {
-				media = cached
-			} else {
-				// Manga not in collection and not cached - fetch from AniList to ensure visibility
-				// This allows users without manga in their AniList collection to see downloaded manga
-				if opts.AnilistPlatform != nil {
-					d.logger.Debug().Int("mediaId", mId).Msg("manga: Fetching metadata for downloaded manga not in collection")
-					fetchedManga, fetchErr := opts.AnilistPlatform.GetManga(context.Background(), mId)
-					if fetchErr == nil && fetchedManga != nil {
-						media = fetchedManga
-						// Cache the fetched metadata for future use
-						downloadedMangaCache.Set(mId, fetchedManga)
-						d.logger.Debug().Int("mediaId", mId).Str("title", fetchedManga.GetTitleSafe()).Msg("manga: Successfully fetched and cached metadata")
-					} else {
-						d.logger.Warn().Int("mediaId", mId).Err(fetchErr).Msg("manga: Failed to fetch metadata from AniList")
-						media = nil
-					}
-				} else {
-					d.logger.Warn().Int("mediaId", mId).Msg("manga: No AniList platform available to fetch metadata")
-					media = nil
-				}
-			}
+		media := listEntry.GetMedia()
+		if media == nil {
+			ret = append(ret, &DownloadListItem{
+				MediaId:      mId,
+				Media:        nil,
+				DownloadData: data,
+			})
+			continue
 		}
 
 		item := &DownloadListItem{
@@ -447,7 +386,6 @@ func (mm *MediaMap) getMediaDownload(mediaId int, db *db.Database) (MediaDownloa
 }
 
 // hydrateMediaMap hydrates the MediaMap by reading the download directory.
-// Uses IndexCache for dramatically faster loading of already downloaded manga.
 func (d *Downloader) hydrateMediaMap() {
 
 	if d.readingDownloadDir {
@@ -464,36 +402,14 @@ func (d *Downloader) hydrateMediaMap() {
 
 	d.logger.Debug().Msg("manga downloader: Reading download directory")
 
-	// Try to load from cache first for faster startup
-	if cachedMediaMap := d.indexCache.GetMediaMap(d.downloadDir); cachedMediaMap != nil {
-		d.logger.Info().Int("mediaCount", len(*cachedMediaMap)).Msg("manga downloader: Loaded media map from cache (fast path)")
-		d.mediaMap = cachedMediaMap
-
-		// Trigger hook event with cached data
-		ev := &MangaDownloadMapEvent{
-			MediaMap: cachedMediaMap,
-		}
-		_ = hook.GlobalHookManager.OnMangaDownloadMap().Trigger(ev)
-		if ev.MediaMap != nil {
-			*d.mediaMap = *ev.MediaMap
-		}
-
-		// Send refresh event to client
-		d.wsEventManager.SendEvent(events.RefreshedMangaDownloadData, nil)
-		return
-	}
-
-	// Cache miss or invalid - perform full directory scan
-	d.logger.Info().Msg("manga downloader: Cache miss, performing full directory scan")
 	ret := make(MediaMap)
 
 	files, err := os.ReadDir(d.downloadDir)
 	if err != nil {
 		d.logger.Error().Err(err).Msg("manga downloader: Failed to read download directory")
-		return
 	}
 
-	// Hydrate MediaMap by going through all directories (both old flat structure and new series structure)
+	// Hydrate MediaMap by going through all chapter directories
 	mu := sync.Mutex{}
 	wg := sync.WaitGroup{}
 	for _, file := range files {
@@ -502,35 +418,29 @@ func (d *Downloader) hydrateMediaMap() {
 			defer wg.Done()
 
 			if file.IsDir() {
-				// Try to parse as chapter directory first (old flat structure)
+				// e.g. comick_1234_abc_13.5
 				id, ok := chapter_downloader.ParseChapterDirName(file.Name())
-				if ok {
-					// Old flat structure: comick_1234_abc_13.5
-					d.addChapterToMediaMap(&ret, &mu, id)
+				if !ok {
+					return
+				}
+
+				mu.Lock()
+				newMapInfo := ProviderDownloadMapChapterInfo{
+					ChapterID:     id.ChapterId,
+					ChapterNumber: id.ChapterNumber,
+				}
+
+				if _, ok := ret[id.MediaId]; !ok {
+					ret[id.MediaId] = make(map[string][]ProviderDownloadMapChapterInfo)
+					ret[id.MediaId][id.Provider] = []ProviderDownloadMapChapterInfo{newMapInfo}
 				} else {
-					// Check if this is a series directory (new structure)
-					seriesPath := filepath.Join(d.downloadDir, file.Name())
-					seriesFiles, err := os.ReadDir(seriesPath)
-					if err != nil {
-						return
-					}
-
-					// Check if any subdirectory contains a provider name (indicates it's a series folder)
-					hasProviderChapters := false
-					for _, seriesFile := range seriesFiles {
-						if seriesFile.IsDir() {
-							if chapterId, chapterOk := chapter_downloader.ParseChapterDirName(seriesFile.Name()); chapterOk {
-								hasProviderChapters = true
-								d.addChapterToMediaMap(&ret, &mu, chapterId)
-							}
-						}
-					}
-
-					// If no provider chapters found, this might be an unrelated directory
-					if !hasProviderChapters {
-						d.logger.Debug().Msgf("Skipping directory '%s' - no manga chapters found", file.Name())
+					if _, ok := ret[id.MediaId][id.Provider]; !ok {
+						ret[id.MediaId][id.Provider] = []ProviderDownloadMapChapterInfo{newMapInfo}
+					} else {
+						ret[id.MediaId][id.Provider] = append(ret[id.MediaId][id.Provider], newMapInfo)
 					}
 				}
+				mu.Unlock()
 			}
 		}(file)
 	}
@@ -548,36 +458,6 @@ func (d *Downloader) hydrateMediaMap() {
 
 	d.mediaMap = &ret
 
-	// Update cache with newly scanned data for faster future loading
-	if err := d.indexCache.UpdateCache(d.downloadDir, &ret); err != nil {
-		d.logger.Error().Err(err).Msg("manga downloader: Failed to update index cache")
-	} else {
-		d.logger.Debug().Int("mediaCount", len(ret)).Msg("manga downloader: Updated index cache")
-	}
-
 	// When done refreshing, send a message to the client to refetch the download data
 	d.wsEventManager.SendEvent(events.RefreshedMangaDownloadData, nil)
-}
-
-// addChapterToMediaMap is a helper function to add chapter information to the MediaMap
-// This reduces code duplication in hydrateMediaMap
-func (d *Downloader) addChapterToMediaMap(ret *MediaMap, mu *sync.Mutex, id chapter_downloader.DownloadID) {
-	mu.Lock()
-	defer mu.Unlock()
-
-	newMapInfo := ProviderDownloadMapChapterInfo{
-		ChapterID:     id.ChapterId,
-		ChapterNumber: id.ChapterNumber,
-	}
-
-	if _, ok := (*ret)[id.MediaId]; !ok {
-		(*ret)[id.MediaId] = make(map[string][]ProviderDownloadMapChapterInfo)
-		(*ret)[id.MediaId][id.Provider] = []ProviderDownloadMapChapterInfo{newMapInfo}
-	} else {
-		if _, ok := (*ret)[id.MediaId][id.Provider]; !ok {
-			(*ret)[id.MediaId][id.Provider] = []ProviderDownloadMapChapterInfo{newMapInfo}
-		} else {
-			(*ret)[id.MediaId][id.Provider] = append((*ret)[id.MediaId][id.Provider], newMapInfo)
-		}
-	}
 }

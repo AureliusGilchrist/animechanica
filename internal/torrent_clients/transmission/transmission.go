@@ -20,7 +20,7 @@ type (
 		Logger   *zerolog.Logger
 		Username string
 		Password string
-		Host     string // Default: 0.0.0.0
+		Host     string // Default: 127.0.0.1
 		Port     int
 	}
 )
@@ -28,7 +28,7 @@ type (
 func New(options *NewTransmissionOptions) (*Transmission, error) {
 	// Set default host
 	if options.Host == "" {
-		options.Host = "0.0.0.0"
+		options.Host = "127.0.0.1"
 	}
 
 	baseUrl := fmt.Sprintf("http://%s:%s@%s:%d/transmission/rpc",
