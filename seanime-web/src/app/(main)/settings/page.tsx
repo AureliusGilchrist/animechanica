@@ -305,6 +305,8 @@ export default function Page() {
                                         scannerMatchingThreshold: data.scannerMatchingThreshold,
                                         scannerMatchingAlgorithm: data.scannerMatchingAlgorithm === "-" ? "" : data.scannerMatchingAlgorithm,
                                         autoSyncToLocalAccount: data.autoSyncToLocalAccount ?? false,
+                                        autoScanAnime: data.autoScanAnime ?? false,
+                                        autoScanManga: data.autoScanManga ?? false,
                                     },
                                     nakama: {
                                         enabled: data.nakamaEnabled ?? false,

@@ -409,6 +409,13 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Manga.DELETE("/download-queue", h.HandleClearAllChapterDownloadQueue)
 	v1Manga.POST("/download-queue/reset-errored", h.HandleResetErroredChapterDownloadQueue)
 
+	// En Masse Downloader
+	v1Manga.POST("/en-masse/start", h.HandleStartEnMasseDownload)
+	v1Manga.POST("/en-masse/pause", h.HandlePauseEnMasseDownload)
+	v1Manga.POST("/en-masse/resume", h.HandleResumeEnMasseDownload)
+	v1Manga.POST("/en-masse/stop", h.HandleStopEnMasseDownload)
+	v1Manga.GET("/en-masse/status", h.HandleGetEnMasseStatus)
+
 	v1Manga.POST("/search", h.HandleMangaManualSearch)
 	v1Manga.POST("/manual-mapping", h.HandleMangaManualMapping)
 	v1Manga.POST("/get-mapping", h.HandleGetMangaMapping)

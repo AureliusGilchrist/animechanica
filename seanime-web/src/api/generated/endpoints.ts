@@ -388,6 +388,78 @@ export const API_ENDPOINTS = {
             endpoint: "/api/v1/auto-downloader/item",
         },
     },
+    CACHE: {
+        /**
+         *  @description
+         *  Route returns cache statistics.
+         *  This returns statistics about all AniList caches including entry counts and types.
+         */
+        GetCacheStats: {
+            key: "CACHE-get-cache-stats",
+            methods: ["GET"],
+            endpoint: "/api/v1/cache/stats",
+        },
+        /**
+         *  @description
+         *  Route clears all AniList caches.
+         *  This clears all cached AniList data including collections, media, characters, and stats.
+         */
+        ClearAllCaches: {
+            key: "CACHE-clear-all-caches",
+            methods: ["POST"],
+            endpoint: "/api/v1/cache/clear-all",
+        },
+        /**
+         *  @description
+         *  Route clears collection caches.
+         *  This clears cached anime and manga collections for all sessions.
+         */
+        ClearCollectionCaches: {
+            key: "CACHE-clear-collection-caches",
+            methods: ["POST"],
+            endpoint: "/api/v1/cache/clear-collections",
+        },
+        /**
+         *  @description
+         *  Route clears media caches.
+         *  This clears cached individual anime and manga details.
+         */
+        ClearMediaCaches: {
+            key: "CACHE-clear-media-caches",
+            methods: ["POST"],
+            endpoint: "/api/v1/cache/clear-media",
+        },
+        /**
+         *  @description
+         *  Route clears character and studio caches.
+         *  This clears cached character and studio details.
+         */
+        ClearCharacterCaches: {
+            key: "CACHE-clear-character-caches",
+            methods: ["POST"],
+            endpoint: "/api/v1/cache/clear-characters",
+        },
+        /**
+         *  @description
+         *  Route clears stats caches.
+         *  This clears cached AniList stats for all sessions.
+         */
+        ClearStatsCaches: {
+            key: "CACHE-clear-stats-caches",
+            methods: ["POST"],
+            endpoint: "/api/v1/cache/clear-stats",
+        },
+        /**
+         *  @description
+         *  Route clears caches for the current session.
+         *  This clears all cached data for the current user session only.
+         */
+        ClearSessionCaches: {
+            key: "CACHE-clear-session-caches",
+            methods: ["POST"],
+            endpoint: "/api/v1/cache/clear-session",
+        },
+    },
     CHARACTER: {
         /**
          *  @description
@@ -397,7 +469,7 @@ export const API_ENDPOINTS = {
         GetCharacterDetails: {
             key: "CHARACTER-get-character-details",
             methods: ["GET"],
-            endpoint: "/api/v1/character",
+            endpoint: "/api/v1/anilist/character",
         },
     },
     CONTINUITY: {
@@ -619,6 +691,33 @@ export const API_ENDPOINTS = {
             key: "DOWNLOAD-download-release",
             methods: ["POST"],
             endpoint: "/api/v1/download-release",
+        },
+    },
+    EN_MASSE_DOWNLOADER: {
+        StartEnMasseDownload: {
+            key: "EN-MASSE-DOWNLOADER-start-en-masse-download",
+            methods: ["POST"],
+            endpoint: "/api/v1/manga/en-masse/start",
+        },
+        PauseEnMasseDownload: {
+            key: "EN-MASSE-DOWNLOADER-pause-en-masse-download",
+            methods: ["POST"],
+            endpoint: "/api/v1/manga/en-masse/pause",
+        },
+        ResumeEnMasseDownload: {
+            key: "EN-MASSE-DOWNLOADER-resume-en-masse-download",
+            methods: ["POST"],
+            endpoint: "/api/v1/manga/en-masse/resume",
+        },
+        StopEnMasseDownload: {
+            key: "EN-MASSE-DOWNLOADER-stop-en-masse-download",
+            methods: ["POST"],
+            endpoint: "/api/v1/manga/en-masse/stop",
+        },
+        GetEnMasseStatus: {
+            key: "EN-MASSE-DOWNLOADER-get-en-masse-status",
+            methods: ["GET"],
+            endpoint: "/api/v1/manga/en-masse/status",
         },
     },
     EXPLORER: {

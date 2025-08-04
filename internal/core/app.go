@@ -14,9 +14,11 @@ import (
 	"seanime/internal/directstream"
 	discordrpc_presence "seanime/internal/discordrpc/presence"
 	"seanime/internal/doh"
+	"seanime/internal/enmasse"
 	"seanime/internal/events"
 	"seanime/internal/extension_playground"
 	"seanime/internal/extension_repo"
+
 	"seanime/internal/hook"
 	"seanime/internal/library/autodownloader"
 	"seanime/internal/library/autoscanner"
@@ -123,6 +125,7 @@ type (
 		ServerPasswordHash string // SHA-256 hash of the server password
 		AnilistCacheManager *cache.AnilistCacheManager // Comprehensive AniList data caching
 		EnhancedAnilistCacheManager *cache.EnhancedAnilistCacheManager // Enhanced AniList data caching with optimization
+		EnMasseDownloader *enmasse.Downloader // En Masse Downloader for WeebCentral manga
 	}
 )
 

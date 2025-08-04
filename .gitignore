@@ -8,7 +8,7 @@ testdata/
 .cursor
 .DS_Store
 */.DS_Store
-
+data/*
 Dockerfile
 Dockerfile.dev
 dev.dockerfile

@@ -409,6 +409,85 @@
 // }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// cache
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// export function useGetCacheStats() {
+//     return useServerQuery<Record<string, interface{}>>({
+//         endpoint: API_ENDPOINTS.CACHE.GetCacheStats.endpoint,
+//         method: API_ENDPOINTS.CACHE.GetCacheStats.methods[0],
+//         queryKey: [API_ENDPOINTS.CACHE.GetCacheStats.key],
+//         enabled: true,
+//     })
+// }
+
+// export function useClearAllCaches() {
+//     return useServerMutation<boolean>({
+//         endpoint: API_ENDPOINTS.CACHE.ClearAllCaches.endpoint,
+//         method: API_ENDPOINTS.CACHE.ClearAllCaches.methods[0],
+//         mutationKey: [API_ENDPOINTS.CACHE.ClearAllCaches.key],
+//         onSuccess: async () => {
+// 
+//         },
+//     })
+// }
+
+// export function useClearCollectionCaches() {
+//     return useServerMutation<boolean>({
+//         endpoint: API_ENDPOINTS.CACHE.ClearCollectionCaches.endpoint,
+//         method: API_ENDPOINTS.CACHE.ClearCollectionCaches.methods[0],
+//         mutationKey: [API_ENDPOINTS.CACHE.ClearCollectionCaches.key],
+//         onSuccess: async () => {
+// 
+//         },
+//     })
+// }
+
+// export function useClearMediaCaches() {
+//     return useServerMutation<boolean>({
+//         endpoint: API_ENDPOINTS.CACHE.ClearMediaCaches.endpoint,
+//         method: API_ENDPOINTS.CACHE.ClearMediaCaches.methods[0],
+//         mutationKey: [API_ENDPOINTS.CACHE.ClearMediaCaches.key],
+//         onSuccess: async () => {
+// 
+//         },
+//     })
+// }
+
+// export function useClearCharacterCaches() {
+//     return useServerMutation<boolean>({
+//         endpoint: API_ENDPOINTS.CACHE.ClearCharacterCaches.endpoint,
+//         method: API_ENDPOINTS.CACHE.ClearCharacterCaches.methods[0],
+//         mutationKey: [API_ENDPOINTS.CACHE.ClearCharacterCaches.key],
+//         onSuccess: async () => {
+// 
+//         },
+//     })
+// }
+
+// export function useClearStatsCaches() {
+//     return useServerMutation<boolean>({
+//         endpoint: API_ENDPOINTS.CACHE.ClearStatsCaches.endpoint,
+//         method: API_ENDPOINTS.CACHE.ClearStatsCaches.methods[0],
+//         mutationKey: [API_ENDPOINTS.CACHE.ClearStatsCaches.key],
+//         onSuccess: async () => {
+// 
+//         },
+//     })
+// }
+
+// export function useClearSessionCaches() {
+//     return useServerMutation<boolean>({
+//         endpoint: API_ENDPOINTS.CACHE.ClearSessionCaches.endpoint,
+//         method: API_ENDPOINTS.CACHE.ClearSessionCaches.methods[0],
+//         mutationKey: [API_ENDPOINTS.CACHE.ClearSessionCaches.key],
+//         onSuccess: async () => {
+// 
+//         },
+//     })
+// }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // character
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -700,6 +779,63 @@
 //         onSuccess: async () => {
 // 
 //         },
+//     })
+// }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// en_masse_downloader
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// export function useStartEnMasseDownload() {
+//     return useServerMutation<boolean>({
+//         endpoint: API_ENDPOINTS.EN_MASSE_DOWNLOADER.StartEnMasseDownload.endpoint,
+//         method: API_ENDPOINTS.EN_MASSE_DOWNLOADER.StartEnMasseDownload.methods[0],
+//         mutationKey: [API_ENDPOINTS.EN_MASSE_DOWNLOADER.StartEnMasseDownload.key],
+//         onSuccess: async () => {
+// 
+//         },
+//     })
+// }
+
+// export function usePauseEnMasseDownload() {
+//     return useServerMutation<boolean>({
+//         endpoint: API_ENDPOINTS.EN_MASSE_DOWNLOADER.PauseEnMasseDownload.endpoint,
+//         method: API_ENDPOINTS.EN_MASSE_DOWNLOADER.PauseEnMasseDownload.methods[0],
+//         mutationKey: [API_ENDPOINTS.EN_MASSE_DOWNLOADER.PauseEnMasseDownload.key],
+//         onSuccess: async () => {
+// 
+//         },
+//     })
+// }
+
+// export function useResumeEnMasseDownload() {
+//     return useServerMutation<boolean>({
+//         endpoint: API_ENDPOINTS.EN_MASSE_DOWNLOADER.ResumeEnMasseDownload.endpoint,
+//         method: API_ENDPOINTS.EN_MASSE_DOWNLOADER.ResumeEnMasseDownload.methods[0],
+//         mutationKey: [API_ENDPOINTS.EN_MASSE_DOWNLOADER.ResumeEnMasseDownload.key],
+//         onSuccess: async () => {
+// 
+//         },
+//     })
+// }
+
+// export function useStopEnMasseDownload() {
+//     return useServerMutation<boolean>({
+//         endpoint: API_ENDPOINTS.EN_MASSE_DOWNLOADER.StopEnMasseDownload.endpoint,
+//         method: API_ENDPOINTS.EN_MASSE_DOWNLOADER.StopEnMasseDownload.methods[0],
+//         mutationKey: [API_ENDPOINTS.EN_MASSE_DOWNLOADER.StopEnMasseDownload.key],
+//         onSuccess: async () => {
+// 
+//         },
+//     })
+// }
+
+// export function useGetEnMasseStatus() {
+//     return useServerQuery<Record<string, interface{}>>({
+//         endpoint: API_ENDPOINTS.EN_MASSE_DOWNLOADER.GetEnMasseStatus.endpoint,
+//         method: API_ENDPOINTS.EN_MASSE_DOWNLOADER.GetEnMasseStatus.methods[0],
+//         queryKey: [API_ENDPOINTS.EN_MASSE_DOWNLOADER.GetEnMasseStatus.key],
+//         enabled: true,
 //     })
 // }
 

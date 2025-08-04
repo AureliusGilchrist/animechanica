@@ -95,6 +95,8 @@ export const settingsSchema = z.object({
     scannerMatchingThreshold: z.number().optional().default(0.5),
     scannerMatchingAlgorithm: z.string().optional().default(""),
     autoSyncToLocalAccount: z.boolean().optional().default(false),
+    autoScanAnime: z.boolean().optional().default(false),
+    autoScanManga: z.boolean().optional().default(false),
     nakamaIsHost: z.boolean().optional().default(false),
     nakamaHostPassword: z.string().optional().default(""),
     nakamaRemoteServerURL: z.string().optional().default(""),
@@ -131,6 +133,8 @@ export const getDefaultSettings = (data: z.infer<typeof gettingStartedSchema>): 
         scannerMatchingThreshold: 0,
         scannerMatchingAlgorithm: "",
         autoSyncToLocalAccount: false,
+        autoScanAnime: false,
+        autoScanManga: false,
     },
     nakama: {
         enabled: false,

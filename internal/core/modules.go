@@ -10,6 +10,7 @@ import (
 	debrid_client "seanime/internal/debrid/client"
 	"seanime/internal/directstream"
 	discordrpc_presence "seanime/internal/discordrpc/presence"
+	"seanime/internal/enmasse"
 	"seanime/internal/events"
 	"seanime/internal/library/anime"
 	"seanime/internal/library/autodownloader"
@@ -189,6 +190,20 @@ func (a *App) initModulesOnce() {
 	})
 
 	a.MangaDownloader.Start()
+
+	// +---------------------+
+	// |  En Masse Downloader |
+	// +---------------------+
+
+	// Initialize En Masse Downloader for WeebCentral manga
+	cataloguePath := "/aeternae/library/manga/seanime/weebcentral_catalogue.json"
+	a.EnMasseDownloader = enmasse.NewDownloader(
+		cataloguePath,
+		a.Logger,
+		a.WSEventManager,
+		a.MangaDownloader,
+		a.MangaRepository,
+	)
 
 	// +---------------------+
 	// |    Media Stream     |
