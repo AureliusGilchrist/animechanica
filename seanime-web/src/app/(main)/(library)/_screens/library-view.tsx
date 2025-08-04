@@ -75,7 +75,8 @@ export function LibraryView(props: LibraryViewProps) {
 
             {(
                 !ts.disableLibraryScreenGenreSelector &&
-                collectionList.flatMap(n => n.entries)?.length > 2
+                collectionList.flatMap(n => n.entries)?.length > 0 &&
+                genres.length > 0
             ) && <GenreSelector genres={genres} />}
 
             <PageWrapper key="library-collection-lists" className="p-4 space-y-8 relative z-[4]" data-library-collection-lists-container>

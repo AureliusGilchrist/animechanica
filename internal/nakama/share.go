@@ -121,7 +121,7 @@ func (m *Manager) getBaseServerURL() string {
 	ret := ""
 	host := m.serverHost
 	if host == "0.0.0.0" {
-		host = "127.0.0.1"
+		host = "0.0.0.0"
 	}
 	ret = fmt.Sprintf("http://%s:%d", host, m.serverPort)
 	if strings.HasPrefix(ret, "http://http") {
@@ -158,7 +158,7 @@ func (m *Manager) PlayHostAnimeLibraryFile(path string, userAgent string, media 
 
 	host := m.serverHost
 	if host == "0.0.0.0" {
-		host = "127.0.0.1"
+		host = "0.0.0.0"
 	}
 	address := fmt.Sprintf("%s:%d", host, m.serverPort)
 	ret := fmt.Sprintf("http://%s/api/v1/nakama/stream?type=file&path=%s", address, base64.StdEncoding.EncodeToString([]byte(path)))
@@ -203,7 +203,7 @@ func (m *Manager) PlayHostAnimeStream(streamType string, userAgent string, media
 
 	host := m.serverHost
 	if host == "0.0.0.0" {
-		host = "127.0.0.1"
+		host = "0.0.0.0"
 	}
 	address := fmt.Sprintf("%s:%d", host, m.serverPort)
 

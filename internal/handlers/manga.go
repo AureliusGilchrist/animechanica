@@ -8,6 +8,7 @@ import (
 	"seanime/internal/extension"
 	"seanime/internal/manga"
 	manga_providers "seanime/internal/manga/providers"
+	"seanime/internal/platforms/anilist_platform"
 	"seanime/internal/util/result"
 	"strconv"
 	"strings"
@@ -29,17 +30,16 @@ var (
 //	@route /api/v1/manga/anilist/collection [GET]
 //	@returns anilist.MangaCollection
 func (h *Handler) HandleGetAnilistMangaCollection(c echo.Context) error {
-
-	type body struct {
-		BypassCache bool `json:"bypassCache"`
+	// For GET requests, do not bind a body. Use query param or default to false.
+	bypassCache := false
+	if v := c.QueryParam("bypassCache"); v == "true" {
+		bypassCache = true
 	}
 
-	var b body
-	if err := c.Bind(&b); err != nil {
-		return h.RespondWithError(c, err)
-	}
+	// Get session ID from context
+	sessionID := c.Get("Seanime-Client-Id").(string)
 
-	collection, err := h.App.GetMangaCollection(b.BypassCache)
+	collection, err := h.App.GetMangaCollectionForSession(sessionID, bypassCache)
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
@@ -56,8 +56,11 @@ func (h *Handler) HandleGetRawAnilistMangaCollection(c echo.Context) error {
 
 	bypassCache := c.Request().Method == "POST"
 
+	// Get session ID from context
+	sessionID := c.Get("Seanime-Client-Id").(string)
+
 	// Get the user's anilist collection
-	mangaCollection, err := h.App.GetRawMangaCollection(bypassCache)
+	mangaCollection, err := h.App.GetRawMangaCollectionForSession(sessionID, bypassCache)
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
@@ -75,11 +78,17 @@ func (h *Handler) HandleGetRawAnilistMangaCollection(c echo.Context) error {
 //	@returns manga.Collection
 func (h *Handler) HandleGetMangaCollection(c echo.Context) error {
 
-	animeCollection, err := h.App.GetMangaCollection(false)
+	// Get session ID from context
+	sessionID := c.Get("Seanime-Client-Id").(string)
+
+	// PERFORMANCE OPTIMIZATION: Use scan-first approach with cached AniList data
+	// Instead of making expensive AniList API calls, use cached metadata
+	animeCollection, err := h.App.GetMangaCollectionForSession(sessionID, false)
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
 
+	// Create collection using cached data - no fresh API calls needed
 	collection, err := manga.NewCollection(&manga.NewCollectionOptions{
 		MangaCollection: animeCollection,
 		Platform:        h.App.AnilistPlatform,
@@ -99,13 +108,14 @@ func (h *Handler) HandleGetMangaCollection(c echo.Context) error {
 //	@param id - int - true - "AniList manga media ID"
 //	@returns manga.Entry
 func (h *Handler) HandleGetMangaEntry(c echo.Context) error {
+	sessionID := c.Get("Seanime-Client-Id").(string)
 
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
 
-	animeCollection, err := h.App.GetMangaCollection(false)
+	animeCollection, err := h.App.GetMangaCollectionForSession(sessionID, false)
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
@@ -178,6 +188,7 @@ func (h *Handler) HandleGetMangaLatestChapterNumbersMap(c echo.Context) error {
 //	@route /api/v1/manga/refetch-chapter-containers [POST]
 //	@returns bool
 func (h *Handler) HandleRefetchMangaChapterContainers(c echo.Context) error {
+	sessionID := c.Get("Seanime-Client-Id").(string)
 
 	type body struct {
 		SelectedProviderMap map[int]string `json:"selectedProviderMap"`
@@ -188,7 +199,7 @@ func (h *Handler) HandleRefetchMangaChapterContainers(c echo.Context) error {
 		return h.RespondWithError(c, err)
 	}
 
-	mangaCollection, err := h.App.GetMangaCollection(false)
+	mangaCollection, err := h.App.GetMangaCollectionForSession(sessionID, false)
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
@@ -244,11 +255,25 @@ func (h *Handler) HandleGetMangaEntryChapters(c echo.Context) error {
 		return h.RespondWithError(c, err)
 	}
 
+	// Get session ID from context
+	sessionID := c.Get("Seanime-Client-Id").(string)
+
 	var titles []*string
 	baseManga, found := baseMangaCache.Get(b.MediaId)
 	if !found {
+		// Get session for session-based authentication
+		session, found := h.App.SessionManager.GetSession(sessionID)
+		if !found || session == nil {
+			return h.RespondWithError(c, errors.New("session not found"))
+		}
+
+		// Create session-specific AniList client
+		client := anilist.NewAnilistClient(session.Token)
+		platform := anilist_platform.NewAnilistPlatform(client, h.App.Logger)
+		platform.SetUsername(session.Username)
+
 		var err error
-		baseManga, err = h.App.AnilistPlatform.GetManga(c.Request().Context(), b.MediaId)
+		baseManga, err = platform.GetManga(c.Request().Context(), b.MediaId)
 		if err != nil {
 			return h.RespondWithError(c, err)
 		}
@@ -297,6 +322,15 @@ func (h *Handler) HandleGetMangaEntryPages(c echo.Context) error {
 
 	container, err := h.App.MangaRepository.GetMangaPageContainer(b.Provider, b.MediaId, b.ChapterId, b.DoublePage, h.App.IsOffline())
 	if err != nil {
+		// Check if this is a chapter container not found error
+		if strings.Contains(err.Error(), "chapter container not found") {
+			// Return a specific error that the frontend can handle to show "No chapters" instead of loading the reader
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{
+				"error":   "CHAPTER_CONTAINER_NOT_FOUND",
+				"message": "Chapter list needs to be refreshed. Please go back to the manga page to reload chapters.",
+				"details": err.Error(),
+			})
+		}
 		return h.RespondWithError(c, err)
 	}
 
@@ -310,13 +344,14 @@ func (h *Handler) HandleGetMangaEntryPages(c echo.Context) error {
 //	@param id - int - true - "AniList manga media ID"
 //	@returns []manga.ChapterContainer
 func (h *Handler) HandleGetMangaEntryDownloadedChapters(c echo.Context) error {
+	sessionID := c.Get("Seanime-Client-Id").(string)
 
 	mId, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
 
-	mangaCollection, err := h.App.GetMangaCollection(false)
+	mangaCollection, err := h.App.GetMangaCollectionForSession(sessionID, false)
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}

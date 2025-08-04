@@ -1213,9 +1213,9 @@
     "comments": [
       "HandleLogin",
       "",
-      "\t@summary logs in the user by saving the JWT token in the database.",
+      "\t@summary logs in the user by saving the JWT token in the session.",
       "\t@desc This is called when the JWT token is obtained from AniList after logging in with redirection on the client.",
-      "\t@desc It also fetches the Viewer data from AniList and saves it in the database.",
+      "\t@desc It also fetches the Viewer data from AniList and saves it in the session.",
       "\t@desc It creates a new handlers.Status and refreshes App modules.",
       "\t@route /api/v1/auth/login [POST]",
       "\t@returns handlers.Status",
@@ -1224,10 +1224,10 @@
     "filepath": "internal/handlers/auth.go",
     "filename": "auth.go",
     "api": {
-      "summary": "logs in the user by saving the JWT token in the database.",
+      "summary": "logs in the user by saving the JWT token in the session.",
       "descriptions": [
         "This is called when the JWT token is obtained from AniList after logging in with redirection on the client.",
-        "It also fetches the Viewer data from AniList and saves it in the database.",
+        "It also fetches the Viewer data from AniList and saves it in the session.",
         "It creates a new handlers.Status and refreshes App modules."
       ],
       "endpoint": "/api/v1/auth/login",
@@ -1721,6 +1721,36 @@
       "returns": "bool",
       "returnGoType": "bool",
       "returnTypescriptType": "boolean"
+    }
+  },
+  {
+    "name": "HandleGetCharacterDetails",
+    "trimmedName": "GetCharacterDetails",
+    "comments": [
+      "HandleGetCharacterDetails",
+      "",
+      "\t@summary returns character details by ID.",
+      "\t@desc This fetches character information including all media appearances from AniList.",
+      "\t@route /api/v1/character [GET]",
+      "\t@returns *anilist.Character",
+      ""
+    ],
+    "filepath": "internal/handlers/character.go",
+    "filename": "character.go",
+    "api": {
+      "summary": "returns character details by ID.",
+      "descriptions": [
+        "This fetches character information including all media appearances from AniList."
+      ],
+      "endpoint": "/api/v1/character",
+      "methods": [
+        "GET"
+      ],
+      "params": [],
+      "bodyFields": [],
+      "returns": "*anilist.Character",
+      "returnGoType": "anilist.Character",
+      "returnTypescriptType": "AL_Character"
     }
   },
   {
@@ -4700,17 +4730,7 @@
         "GET"
       ],
       "params": [],
-      "bodyFields": [
-        {
-          "name": "BypassCache",
-          "jsonName": "bypassCache",
-          "goType": "bool",
-          "usedStructType": "",
-          "typescriptType": "boolean",
-          "required": true,
-          "descriptions": []
-        }
-      ],
+      "bodyFields": [],
       "returns": "anilist.MangaCollection",
       "returnGoType": "anilist.MangaCollection",
       "returnTypescriptType": "AL_MangaCollection"
@@ -5912,6 +5932,164 @@
       "returns": "[]manga.DownloadListItem",
       "returnGoType": "manga.DownloadListItem",
       "returnTypescriptType": "Array\u003cManga_DownloadListItem\u003e"
+    }
+  },
+  {
+    "name": "retryChapterQueue",
+    "trimmedName": "retryChapterQueue",
+    "comments": [
+      "retryChapterQueue attempts to queue a chapter with exponential backoff retry (15s, 30s, 1min)",
+      ""
+    ],
+    "filepath": "internal/handlers/manga_download.go",
+    "filename": "manga_download.go",
+    "api": {
+      "summary": "",
+      "descriptions": [],
+      "endpoint": "",
+      "methods": null,
+      "params": [],
+      "bodyFields": [],
+      "returns": "bool",
+      "returnGoType": "bool",
+      "returnTypescriptType": "boolean"
+    }
+  },
+  {
+    "name": "getProviderChapterQueueRateLimit",
+    "trimmedName": "getProviderChapterQueueRateLimit",
+    "comments": [
+      "getProviderChapterQueueRateLimit returns the rate limiting delay for queuing chapters from different providers",
+      "This prevents 429 \"Too Many Requests\" errors when fetching chapter page lists",
+      ""
+    ],
+    "filepath": "internal/handlers/manga_download.go",
+    "filename": "manga_download.go",
+    "api": {
+      "summary": "",
+      "descriptions": [],
+      "endpoint": "",
+      "methods": null,
+      "params": [],
+      "bodyFields": [],
+      "returns": "bool",
+      "returnGoType": "bool",
+      "returnTypescriptType": "boolean"
+    }
+  },
+  {
+    "name": "HandleSaveMangaLocally",
+    "trimmedName": "SaveMangaLocally",
+    "comments": [
+      "HandleSaveMangaLocally",
+      "",
+      "\t@summary downloads all chapters of a manga to local storage in order.",
+      "\t@desc This downloads all chapters from lowest to highest chapter number, queued 3 at a time with provider-aware rate limiting.",
+      "\t@desc Downloads are saved to /aeternae/library/manga/seanime/{MANGANAME}",
+      "\t@route /api/v1/manga/save-locally [POST]",
+      "\t@returns bool",
+      ""
+    ],
+    "filepath": "internal/handlers/manga_save_locally.go",
+    "filename": "manga_save_locally.go",
+    "api": {
+      "summary": "downloads all chapters of a manga to local storage in order.",
+      "descriptions": [
+        "This downloads all chapters from lowest to highest chapter number, queued 3 at a time with provider-aware rate limiting.",
+        "Downloads are saved to /aeternae/library/manga/seanime/{MANGANAME}"
+      ],
+      "endpoint": "/api/v1/manga/save-locally",
+      "methods": [
+        "POST"
+      ],
+      "params": [],
+      "bodyFields": [
+        {
+          "name": "MediaId",
+          "jsonName": "mediaId",
+          "goType": "int",
+          "usedStructType": "",
+          "typescriptType": "number",
+          "required": true,
+          "descriptions": []
+        },
+        {
+          "name": "Provider",
+          "jsonName": "provider",
+          "goType": "string",
+          "usedStructType": "",
+          "typescriptType": "string",
+          "required": true,
+          "descriptions": []
+        }
+      ],
+      "returns": "bool",
+      "returnGoType": "bool",
+      "returnTypescriptType": "boolean"
+    }
+  },
+  {
+    "name": "downloadMangaChaptersBulk",
+    "trimmedName": "downloadMangaChaptersBulk",
+    "comments": [
+      "downloadMangaChaptersBulk downloads all chapters by queuing them with minimal delays to prevent rate limiting",
+      ""
+    ],
+    "filepath": "internal/handlers/manga_save_locally.go",
+    "filename": "manga_save_locally.go",
+    "api": {
+      "summary": "",
+      "descriptions": [],
+      "endpoint": "",
+      "methods": null,
+      "params": [],
+      "bodyFields": [],
+      "returns": "bool",
+      "returnGoType": "bool",
+      "returnTypescriptType": "boolean"
+    }
+  },
+  {
+    "name": "getProviderChapterQueueRateLimit",
+    "trimmedName": "getProviderChapterQueueRateLimit",
+    "comments": [
+      "getProviderChapterQueueRateLimit returns the rate limiting delay for queuing chapters from different providers",
+      "This prevents 429 \"Too Many Requests\" errors when fetching chapter page lists",
+      ""
+    ],
+    "filepath": "internal/handlers/manga_save_locally.go",
+    "filename": "manga_save_locally.go",
+    "api": {
+      "summary": "",
+      "descriptions": [],
+      "endpoint": "",
+      "methods": null,
+      "params": [],
+      "bodyFields": [],
+      "returns": "bool",
+      "returnGoType": "bool",
+      "returnTypescriptType": "boolean"
+    }
+  },
+  {
+    "name": "getMangaTitleForDownload",
+    "trimmedName": "getMangaTitleForDownload",
+    "comments": [
+      "getMangaTitleForDownload gets the manga title for directory naming",
+      ""
+    ],
+    "filepath": "internal/handlers/manga_save_locally.go",
+    "filename": "manga_save_locally.go",
+    "api": {
+      "summary": "",
+      "descriptions": [],
+      "endpoint": "",
+      "methods": null,
+      "params": [],
+      "bodyFields": [],
+      "returns": "bool",
+      "returnGoType": "bool",
+      "returnTypescriptType": "boolean"
     }
   },
   {

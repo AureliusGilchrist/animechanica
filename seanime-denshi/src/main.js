@@ -524,8 +524,8 @@ function createMainWindow() {
     // Load the web content
     if (_development) {
         // In development, load from the dev server
-        logStartupEvent('Loading from dev server', 'http://127.0.0.1:43210');
-        mainWindow.loadURL('http://127.0.0.1:43210');
+        logStartupEvent('Loading from dev server', 'http://0.0.0.0:43210');
+        mainWindow.loadURL('http://0.0.0.0:43210');
         // mainWindow.loadURL('chrome://gpu');
     } else {
         // Load from electron-serve
@@ -571,8 +571,8 @@ function createSplashScreen() {
     // Load the web content
     if (_development) {
         // In development, load from the dev server
-        logStartupEvent('Loading splash from dev server', 'http://127.0.0.1:43210/splashscreen');
-        splashScreen.loadURL('http://127.0.0.1:43210/splashscreen');
+        logStartupEvent('Loading splash from dev server', 'http://0.0.0.0:43210/splashscreen');
+        splashScreen.loadURL('http://0.0.0.0:43210/splashscreen');
     } else {
         // Load from electron-serve
         logStartupEvent('Loading splash screen with electron-serve');
@@ -602,7 +602,7 @@ function createCrashScreen() {
     // Load the web content
     if (_development) {
         // In development, load from the dev server
-        crashScreen.loadURL('http://127.0.0.1:43210/splashscreen/crash');
+        crashScreen.loadURL('http://0.0.0.0:43210/splashscreen/crash');
     } else {
         // Load from electron-serve
         appServe(crashScreen).then(() => {

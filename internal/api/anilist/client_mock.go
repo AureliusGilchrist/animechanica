@@ -567,3 +567,8 @@ func (ac *MockAnilistClientImpl) AnimeAiringScheduleRaw(ctx context.Context, ids
 	ac.logger.Debug().Msg("anilist: Fetching schedule")
 	return ac.realAnilistClient.AnimeAiringScheduleRaw(ctx, ids, interceptors...)
 }
+
+func (ac *MockAnilistClientImpl) CharacterDetails(ctx context.Context, id *int, interceptors ...clientv2.RequestInterceptor) (*Character, error) {
+	log.Println("MockAnilistClientImpl: CharacterDetails NOT IMPLEMENTED")
+	return nil, nil
+}

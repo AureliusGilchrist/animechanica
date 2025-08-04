@@ -111,7 +111,6 @@ export function useDeleteMangaDownloadedChapters(id: Nullish<string | number>, p
 }
 
 export function useGetMangaDownloadsList() {
-
     return useServerQuery<Array<Manga_DownloadListItem>>({
         endpoint: API_ENDPOINTS.MANGA_DOWNLOAD.GetMangaDownloadsList.endpoint,
         method: API_ENDPOINTS.MANGA_DOWNLOAD.GetMangaDownloadsList.methods[0],
@@ -120,3 +119,16 @@ export function useGetMangaDownloadsList() {
     })
 }
 
+export function useSaveMangaLocally() {
+    const queryClient = useQueryClient()
+
+    return useServerMutation<boolean, { mediaId: number; provider: string }>({
+        endpoint: "/api/v1/manga/save-locally",
+        method: "POST",
+        mutationKey: ["save-manga-locally"],
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: [API_ENDPOINTS.MANGA_DOWNLOAD.GetMangaDownloadQueue.key] })
+            await queryClient.invalidateQueries({ queryKey: [API_ENDPOINTS.MANGA_DOWNLOAD.GetMangaDownloadData.key] })
+        },
+    })
+}

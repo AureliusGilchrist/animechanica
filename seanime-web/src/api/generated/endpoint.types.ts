@@ -15,9 +15,9 @@ import type {
     Anime_LocalFileMetadata,
     ChapterDownloader_DownloadID,
     Continuity_UpdateWatchHistoryItemOptions,
-    Debrid_TorrentItem,
     DebridClient_CancelStreamOptions,
     DebridClient_StreamPlaybackType,
+    Debrid_TorrentItem,
     HibikeTorrent_AnimeTorrent,
     Mediastream_StreamType,
     Models_AnilistSettings,
@@ -297,7 +297,7 @@ export type UpdateAnimeEntryRepeat_Variables = {
  * - Filename: auth.go
  * - Endpoint: /api/v1/auth/login
  * @description
- * Route logs in the user by saving the JWT token in the database.
+ * Route logs in the user by saving the JWT token in the session.
  */
 export type Login_Variables = {
     token: string
@@ -390,6 +390,10 @@ export type DeleteAutoDownloaderRule_Variables = {
 export type DeleteAutoDownloaderItem_Variables = {
     id: number
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// character
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // continuity
@@ -981,17 +985,6 @@ export type EditMALListEntryProgress_Variables = {
 /**
  * - Filepath: internal/handlers/manga.go
  * - Filename: manga.go
- * - Endpoint: /api/v1/manga/anilist/collection
- * @description
- * Route returns the user's AniList manga collection.
- */
-export type GetAnilistMangaCollection_Variables = {
-    bypassCache: boolean
-}
-
-/**
- * - Filepath: internal/handlers/manga.go
- * - Filename: manga.go
  * - Endpoint: /api/v1/manga/entry/{id}
  * @description
  * Route returns a manga entry for the given AniList manga id.
@@ -1202,6 +1195,22 @@ export type GetMangaDownloadData_Variables = {
  */
 export type DeleteMangaDownloadedChapters_Variables = {
     downloadIds: Array<ChapterDownloader_DownloadID>
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// manga_save_locally
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * - Filepath: internal/handlers/manga_save_locally.go
+ * - Filename: manga_save_locally.go
+ * - Endpoint: /api/v1/manga/save-locally
+ * @description
+ * Route downloads all chapters of a manga to local storage in order.
+ */
+export type SaveMangaLocally_Variables = {
+    mediaId: number
+    provider: string
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1595,6 +1604,8 @@ export type ScanLocalFiles_Variables = {
     enhanced: boolean
     skipLockedFiles: boolean
     skipIgnoredFiles: boolean
+    scanAnime: boolean
+    scanManga: boolean
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1760,7 +1771,7 @@ export type TorrentClientAddMagnetFromRule_Variables = {
 export type SearchTorrent_Variables = {
     /**
      *  "smart" or "simple"
-     *
+     *  
      *  "smart" or "simple"
      */
     type?: string

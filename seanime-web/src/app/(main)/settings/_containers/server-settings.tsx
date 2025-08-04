@@ -2,7 +2,7 @@ import { useLocalSyncSimulatedDataToAnilist } from "@/api/hooks/local.hooks"
 import { __seaCommand_shortcuts } from "@/app/(main)/_features/sea-command/sea-command"
 import { SettingsCard } from "@/app/(main)/settings/_components/settings-card"
 import { SettingsSubmitButton } from "@/app/(main)/settings/_components/settings-submit-button"
-import { ConfirmationDialog, useConfirmationDialog } from "@/components/shared/confirmation-dialog"
+import { useConfirmationDialog } from "@/components/shared/confirmation-dialog"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/components/ui/core/styling"
 import { Field } from "@/components/ui/form"
@@ -126,8 +126,6 @@ export function ServerSettings(props: ServerSettingsProps) {
                     Upload local lists to AniList
                 </Button>
             </SettingsCard>
-
-            <ConfirmationDialog {...confirmDialog} />
 
             <SettingsCard title="Offline mode" description="Only available when authenticated with AniList.">
 

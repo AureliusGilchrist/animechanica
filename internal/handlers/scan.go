@@ -22,6 +22,8 @@ func (h *Handler) HandleScanLocalFiles(c echo.Context) error {
 		Enhanced         bool `json:"enhanced"`
 		SkipLockedFiles  bool `json:"skipLockedFiles"`
 		SkipIgnoredFiles bool `json:"skipIgnoredFiles"`
+		ScanAnime        bool `json:"scanAnime"`
+		ScanManga        bool `json:"scanManga"`
 	}
 
 	var b body
@@ -70,6 +72,8 @@ func (h *Handler) HandleScanLocalFiles(c echo.Context) error {
 		ExistingLocalFiles: existingLfs,
 		SkipLockedFiles:    b.SkipLockedFiles,
 		SkipIgnoredFiles:   b.SkipIgnoredFiles,
+		ScanAnime:          b.ScanAnime,
+		ScanManga:          b.ScanManga,
 		ScanSummaryLogger:  scanSummaryLogger,
 		ScanLogger:         scanLogger,
 		MetadataProvider:   h.App.MetadataProvider,

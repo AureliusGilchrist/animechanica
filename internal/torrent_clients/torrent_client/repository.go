@@ -6,6 +6,7 @@ import (
 	"github.com/hekmon/transmissionrpc/v3"
 	"github.com/rs/zerolog"
 	"seanime/internal/api/metadata"
+	"seanime/internal/database/models"
 	"seanime/internal/events"
 	"seanime/internal/torrent_clients/qbittorrent"
 	"seanime/internal/torrent_clients/qbittorrent/model"
@@ -31,6 +32,7 @@ type (
 		metadataProvider            metadata.Provider
 		activeTorrentCountCtxCancel context.CancelFunc
 		activeTorrentCount          *ActiveCount
+		torrentSettings             *models.TorrentSettings
 	}
 
 	NewRepositoryOptions struct {
@@ -40,6 +42,7 @@ type (
 		TorrentRepository *torrent.Repository
 		Provider          string
 		MetadataProvider  metadata.Provider
+		TorrentSettings   *models.TorrentSettings
 	}
 
 	ActiveCount struct {
@@ -61,6 +64,7 @@ func NewRepository(opts *NewRepositoryOptions) *Repository {
 		provider:           opts.Provider,
 		metadataProvider:   opts.MetadataProvider,
 		activeTorrentCount: &ActiveCount{},
+		torrentSettings:    opts.TorrentSettings,
 	}
 }
 
@@ -223,18 +227,25 @@ func (r *Repository) AddMagnets(magnets []string, dest string) error {
 		return nil
 	}
 
+	// Override destination for qBittorrent when downloads directory is configured
+	actualDest := dest
+	if r.provider == QbittorrentClient && r.torrentSettings != nil && r.torrentSettings.QBittorrentDownloadsDir != "" {
+		actualDest = r.torrentSettings.QBittorrentDownloadsDir
+		r.logger.Debug().Str("original_dest", dest).Str("override_dest", actualDest).Msg("torrent client: Using qBittorrent downloads directory override")
+	}
+
 	var err error
 	switch r.provider {
 	case QbittorrentClient:
 		err = r.qBittorrentClient.Torrent.AddURLs(magnets, &qbittorrent_model.AddTorrentsOptions{
-			Savepath: dest,
+			Savepath: actualDest,
 			Tags:     r.qBittorrentClient.Tags,
 		})
 	case TransmissionClient:
 		for _, magnet := range magnets {
 			_, err = r.transmission.Client.TorrentAdd(context.Background(), transmissionrpc.TorrentAddPayload{
 				Filename:    &magnet,
-				DownloadDir: &dest,
+				DownloadDir: &actualDest,
 			})
 			if err != nil {
 				r.logger.Err(err).Msg("torrent client: Error while adding magnets (Transmission)")

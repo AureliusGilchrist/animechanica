@@ -44,10 +44,19 @@ export function LibrarySettings(props: LibrarySettingsProps) {
 
                 <Field.Switch
                     side="right"
-                    name="autoScan"
-                    label="Automatically refresh library"
+                    name="autoScanAnime"
+                    label="Automatically refresh anime library"
                     moreHelp={<p>
-                        When adding batches, not all files are guaranteed to be picked up.
+                        Automatically scan for new anime files when they are added to your library directories.
+                    </p>}
+                />
+
+                <Field.Switch
+                    side="right"
+                    name="autoScanManga"
+                    label="Automatically refresh manga library"
+                    moreHelp={<p>
+                        Automatically scan for new manga files when they are added to your library directories.
                     </p>}
                 />
 

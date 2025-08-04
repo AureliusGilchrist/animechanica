@@ -442,6 +442,16 @@ func (lp *OfflinePlatform) GetStudioDetails(ctx context.Context, studioID int) (
 	return &anilist.StudioDetails{}, nil
 }
 
+// CharacterDetails isn't supported for the local platform, always returns an empty struct
+func (lp *OfflinePlatform) CharacterDetails(ctx context.Context, characterID *int) (*anilist.Character, error) {
+	return &anilist.Character{}, nil
+}
+
+// GetCharacter isn't supported for the local platform, always returns an empty struct
+func (lp *OfflinePlatform) GetCharacter(ctx context.Context, characterID int) (*anilist.Character, error) {
+	return &anilist.Character{}, nil
+}
+
 func (lp *OfflinePlatform) GetAnilistClient() anilist.AnilistClient {
 	return lp.client
 }

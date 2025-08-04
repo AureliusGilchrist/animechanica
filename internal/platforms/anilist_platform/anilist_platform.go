@@ -636,6 +636,36 @@ func (ap *AnilistPlatform) GetStudioDetails(ctx context.Context, studioID int) (
 	return event.Studio, nil
 }
 
+func (ap *AnilistPlatform) GetCharacter(ctx context.Context, characterID int) (*anilist.Character, error) {
+	if ap.isOffline {
+		return nil, errors.New("offline mode")
+	}
+
+	if !ap.anilistClient.IsAuthenticated() {
+		return nil, anilist.ErrNotAuthenticated
+	}
+
+	character, err := ap.anilistClient.CharacterDetails(ctx, &characterID)
+	if err != nil {
+		return nil, err
+	}
+
+	return character, nil
+}
+
+func (ap *AnilistPlatform) CharacterDetails(ctx context.Context, characterID *int) (*anilist.Character, error) {
+	if ap.isOffline {
+		return nil, errors.New("offline mode")
+	}
+
+	character, err := ap.anilistClient.CharacterDetails(ctx, characterID)
+	if err != nil {
+		return nil, err
+	}
+
+	return character, nil
+}
+
 func (ap *AnilistPlatform) GetAnilistClient() anilist.AnilistClient {
 	return ap.anilistClient
 }

@@ -1,8 +1,6 @@
 package chapter_downloader
 
 import (
-	"github.com/goccy/go-json"
-	"github.com/rs/zerolog"
 	"seanime/internal/database/db"
 	"seanime/internal/database/models"
 	"seanime/internal/events"
@@ -10,6 +8,9 @@ import (
 	"seanime/internal/util"
 	"sync"
 	"time"
+
+	"github.com/goccy/go-json"
+	"github.com/rs/zerolog"
 )
 
 const (
@@ -54,12 +55,13 @@ func NewQueue(db *db.Database, logger *zerolog.Logger, wsEventManager events.WSE
 // Add adds a chapter to the download queue.
 // It tells the queue to download the next item if possible.
 func (q *Queue) Add(id DownloadID, pages []*hibikemanga.ChapterPage, runNext bool) error {
+	q.logger.Info().Msgf("[Queue.Add] Attempting to add chapter to queue: Provider=%s MediaId=%d ChapterId=%s RunNext=%v PageCount=%d", id.Provider, id.MediaId, id.ChapterId, runNext, len(pages))
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	marshalled, err := json.Marshal(pages)
 	if err != nil {
-		q.logger.Error().Err(err).Msgf("Failed to marshal pages for id %v", id)
+		q.logger.Error().Err(err).Msgf("[Queue.Add] Failed to marshal pages for id %v", id)
 		return err
 	}
 
@@ -69,13 +71,15 @@ func (q *Queue) Add(id DownloadID, pages []*hibikemanga.ChapterPage, runNext boo
 		MediaID:       id.MediaId,
 		ChapterNumber: id.ChapterNumber,
 		ChapterID:     id.ChapterId,
+		MangaTitle:    id.MangaTitle,
 		PageData:      marshalled,
 		Status:        string(QueueStatusNotStarted),
 	})
 	if err != nil {
-		q.logger.Error().Err(err).Msgf("Failed to insert chapter download queue item for id %v", id)
+		q.logger.Error().Err(err).Msgf("[Queue.Add] Failed to insert chapter download queue item for id %v", id)
 		return err
 	}
+	q.logger.Info().Msgf("[Queue.Add] Successfully inserted chapter into queue: Provider=%s MediaId=%d ChapterId=%s", id.Provider, id.MediaId, id.ChapterId)
 
 	q.logger.Info().Msgf("chapter downloader: Added chapter to download queue: %s", id.ChapterId)
 
@@ -177,6 +181,7 @@ func (q *Queue) runNext() {
 		MediaId:       next.MediaID,
 		ChapterId:     next.ChapterID,
 		ChapterNumber: next.ChapterNumber,
+		MangaTitle:    next.MangaTitle,
 	}
 
 	q.logger.Debug().Msgf("chapter downloader: Preparing next item in queue: %s", id.ChapterId)

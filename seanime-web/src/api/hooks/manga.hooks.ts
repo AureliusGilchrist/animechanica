@@ -2,7 +2,6 @@ import { useServerMutation, useServerQuery } from "@/api/client/requests"
 import {
     AnilistListManga_Variables,
     EmptyMangaEntryCache_Variables,
-    GetAnilistMangaCollection_Variables,
     GetMangaEntryChapters_Variables,
     GetMangaEntryPages_Variables,
     GetMangaMapping_Variables,
@@ -30,7 +29,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 export function useGetAnilistMangaCollection() {
-    return useServerQuery<AL_MangaCollection, GetAnilistMangaCollection_Variables>({
+    return useServerQuery<AL_MangaCollection>({
         endpoint: API_ENDPOINTS.MANGA.GetAnilistMangaCollection.endpoint,
         method: API_ENDPOINTS.MANGA.GetAnilistMangaCollection.methods[0],
         queryKey: [API_ENDPOINTS.MANGA.GetAnilistMangaCollection.key],
@@ -40,7 +39,7 @@ export function useGetAnilistMangaCollection() {
 
 
 export function useGetRawAnilistMangaCollection() {
-    return useServerQuery<AL_MangaCollection, GetAnilistMangaCollection_Variables>({
+    return useServerQuery<AL_MangaCollection>({
         endpoint: API_ENDPOINTS.MANGA.GetRawAnilistMangaCollection.endpoint,
         method: API_ENDPOINTS.MANGA.GetRawAnilistMangaCollection.methods[0],
         queryKey: [API_ENDPOINTS.MANGA.GetRawAnilistMangaCollection.key],

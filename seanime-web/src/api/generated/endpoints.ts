@@ -274,9 +274,9 @@ export const API_ENDPOINTS = {
     AUTH: {
         /**
          *  @description
-         *  Route logs in the user by saving the JWT token in the database.
+         *  Route logs in the user by saving the JWT token in the session.
          *  This is called when the JWT token is obtained from AniList after logging in with redirection on the client.
-         *  It also fetches the Viewer data from AniList and saves it in the database.
+         *  It also fetches the Viewer data from AniList and saves it in the session.
          *  It creates a new handlers.Status and refreshes App modules.
          */
         Login: {
@@ -386,6 +386,18 @@ export const API_ENDPOINTS = {
             key: "AUTO-DOWNLOADER-delete-auto-downloader-item",
             methods: ["DELETE"],
             endpoint: "/api/v1/auto-downloader/item",
+        },
+    },
+    CHARACTER: {
+        /**
+         *  @description
+         *  Route returns character details by ID.
+         *  This fetches character information including all media appearances from AniList.
+         */
+        GetCharacterDetails: {
+            key: "CHARACTER-get-character-details",
+            methods: ["GET"],
+            endpoint: "/api/v1/character",
         },
     },
     CONTINUITY: {
@@ -1207,6 +1219,19 @@ export const API_ENDPOINTS = {
             endpoint: "/api/v1/manga/downloads",
         },
     },
+    MANGA_SAVE_LOCALLY: {
+        /**
+         *  @description
+         *  Route downloads all chapters of a manga to local storage in order.
+         *  This downloads all chapters from lowest to highest chapter number, queued 3 at a time with provider-aware rate limiting.
+         *  Downloads are saved to /aeternae/library/manga/seanime/{MANGANAME}
+         */
+        SaveMangaLocally: {
+            key: "MANGA-SAVE-LOCALLY-save-manga-locally",
+            methods: ["POST"],
+            endpoint: "/api/v1/manga/save-locally",
+        },
+    },
     MANUAL_DUMP: {
         TestDump: {
             key: "MANUAL-DUMP-test-dump",
@@ -1442,8 +1467,8 @@ export const API_ENDPOINTS = {
          *  Route returns the episode list for the given media and provider.
          *  It returns the episode list for the given media and provider.
          *  The episodes are cached using a file cache.
-         *  The episode list is just a list of episodes with no video sources, it's what the client uses to display the episodes and subsequently
-         *     fetch the sources. The episode list might be nil or empty if nothing could be found, but the media will always be returned.
+         *  The episode list is just a list of episodes with no video sources, it's what the client uses to display the episodes and subsequently fetch the sources.
+         *  The episode list might be nil or empty if nothing could be found, but the media will always be returned.
          */
         GetOnlineStreamEpisodeList: {
             key: "ONLINESTREAM-get-online-stream-episode-list",

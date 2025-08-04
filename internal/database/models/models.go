@@ -85,6 +85,9 @@ type LibrarySettings struct {
 	ScannerMatchingAlgorithm string  `gorm:"column:scanner_matching_algorithm" json:"scannerMatchingAlgorithm"`
 	// v2.9+
 	AutoSyncToLocalAccount bool `gorm:"column:auto_sync_to_local_account" json:"autoSyncToLocalAccount"`
+	// Separate scan toggles for anime and manga
+	AutoScanAnime bool `gorm:"column:auto_scan_anime" json:"autoScanAnime"`
+	AutoScanManga bool `gorm:"column:auto_scan_manga" json:"autoScanManga"`
 }
 
 func (o *LibrarySettings) GetLibraryPaths() (ret []string) {
@@ -181,18 +184,20 @@ type MediaPlayerSettings struct {
 }
 
 type TorrentSettings struct {
-	Default              string `gorm:"column:default_torrent_client" json:"defaultTorrentClient"`
-	QBittorrentPath      string `gorm:"column:qbittorrent_path" json:"qbittorrentPath"`
-	QBittorrentHost      string `gorm:"column:qbittorrent_host" json:"qbittorrentHost"`
-	QBittorrentPort      int    `gorm:"column:qbittorrent_port" json:"qbittorrentPort"`
-	QBittorrentUsername  string `gorm:"column:qbittorrent_username" json:"qbittorrentUsername"`
-	QBittorrentPassword  string `gorm:"column:qbittorrent_password" json:"qbittorrentPassword"`
-	QBittorrentTags      string `gorm:"column:qbittorrent_tags" json:"qbittorrentTags"`
-	TransmissionPath     string `gorm:"column:transmission_path" json:"transmissionPath"`
-	TransmissionHost     string `gorm:"column:transmission_host" json:"transmissionHost"`
-	TransmissionPort     int    `gorm:"column:transmission_port" json:"transmissionPort"`
-	TransmissionUsername string `gorm:"column:transmission_username" json:"transmissionUsername"`
-	TransmissionPassword string `gorm:"column:transmission_password" json:"transmissionPassword"`
+	Default             string `gorm:"column:default_torrent_client" json:"defaultTorrentClient"`
+	QBittorrentPath     string `gorm:"column:qbittorrent_path" json:"qbittorrentPath"`
+	QBittorrentHost     string `gorm:"column:qbittorrent_host" json:"qbittorrentHost"`
+	QBittorrentPort     int    `gorm:"column:qbittorrent_port" json:"qbittorrentPort"`
+	QBittorrentUsername string `gorm:"column:qbittorrent_username" json:"qbittorrentUsername"`
+	QBittorrentPassword string `gorm:"column:qbittorrent_password" json:"qbittorrentPassword"`
+	QBittorrentTags     string `gorm:"column:qbittorrent_tags" json:"qbittorrentTags"`
+	// v2.3+ Docker downloads directory override
+	QBittorrentDownloadsDir string `gorm:"column:qbittorrent_downloads_dir" json:"qbittorrentDownloadsDir"`
+	TransmissionPath        string `gorm:"column:transmission_path" json:"transmissionPath"`
+	TransmissionHost        string `gorm:"column:transmission_host" json:"transmissionHost"`
+	TransmissionPort        int    `gorm:"column:transmission_port" json:"transmissionPort"`
+	TransmissionUsername    string `gorm:"column:transmission_username" json:"transmissionUsername"`
+	TransmissionPassword    string `gorm:"column:transmission_password" json:"transmissionPassword"`
 	// v2.1+
 	ShowActiveTorrentCount bool `gorm:"column:show_active_torrent_count" json:"showActiveTorrentCount"`
 	// v2.2+
@@ -357,7 +362,8 @@ type ChapterDownloadQueueItem struct {
 	MediaID       int    `gorm:"column:media_id" json:"mediaId"`
 	ChapterID     string `gorm:"column:chapter_id" json:"chapterId"`
 	ChapterNumber string `gorm:"column:chapter_number" json:"chapterNumber"`
-	PageData      []byte `gorm:"column:page_data" json:"pageData"` // Contains map of page index to page details
+	MangaTitle    string `gorm:"column:manga_title" json:"mangaTitle"` // For series-based directory structure
+	PageData      []byte `gorm:"column:page_data" json:"pageData"`     // Contains map of page index to page details
 	Status        string `gorm:"column:status" json:"status"`
 }
 

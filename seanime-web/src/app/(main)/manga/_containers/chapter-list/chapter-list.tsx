@@ -2,10 +2,11 @@ import { AL_MangaDetailsById_Media, HibikeManga_ChapterDetails, Manga_Entry, Man
 import { useEmptyMangaEntryCache } from "@/api/hooks/manga.hooks"
 import { SeaCommandInjectableItem, useSeaCommandInject } from "@/app/(main)/_features/sea-command/use-inject"
 import { ChapterListBulkActions } from "@/app/(main)/manga/_containers/chapter-list/_components/chapter-list-bulk-actions"
+import { SaveLocallyButton } from "@/app/(main)/manga/_containers/chapter-list/_components/save-locally-button"
 import { DownloadedChapterList } from "@/app/(main)/manga/_containers/chapter-list/downloaded-chapter-list"
 import { MangaManualMappingModal } from "@/app/(main)/manga/_containers/chapter-list/manga-manual-mapping-modal"
 import { ChapterReaderDrawer } from "@/app/(main)/manga/_containers/chapter-reader/chapter-reader-drawer"
-import { __manga_selectedChapterAtom } from "@/app/(main)/manga/_lib/handle-chapter-reader"
+import { useMangaChapterSelection } from "@/app/(main)/manga/_lib/handle-chapter-reader"
 import { useHandleMangaChapters } from "@/app/(main)/manga/_lib/handle-manga-chapters"
 import { useHandleDownloadMangaChapter } from "@/app/(main)/manga/_lib/handle-manga-downloads"
 import { getChapterNumberFromChapter, useMangaChapterListRowSelection, useMangaDownloadDataUtils } from "@/app/(main)/manga/_lib/handle-manga-utils"
@@ -19,7 +20,7 @@ import { useUpdateEffect } from "@/components/ui/core/hooks"
 import { DataGrid, defineDataGridColumns } from "@/components/ui/datagrid"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Select } from "@/components/ui/select"
-import { useSetAtom } from "jotai/react"
+
 import React from "react"
 import { FaRedo } from "react-icons/fa"
 import { GiOpenBook } from "react-icons/gi"
@@ -86,9 +87,19 @@ export function ChapterList(props: ChapterListProps) {
     const [showDownloadedChapters, setShowDownloadedChapters] = React.useState(false)
 
     /**
-     * Set selected chapter
+     * Set selected chapter - using per-manga selection
      */
-    const setSelectedChapter = useSetAtom(__manga_selectedChapterAtom)
+    const { setSelectedChapter } = useMangaChapterSelection(Number(mediaId))
+    
+    /**
+     * Clear selected chapter when opening this manga to prevent auto-reading mode
+     * This ensures each manga starts at the chapter selection page, not in reading mode
+     */
+    React.useEffect(() => {
+        // Clear the selected chapter when this manga loads
+        // This prevents automatic reading mode from previous manga sessions
+        setSelectedChapter(undefined)
+    }, [mediaId, setSelectedChapter])
     /**
      * Clear manga cache
      */
@@ -399,7 +410,12 @@ export function ChapterList(props: ChapterListProps) {
                                 <div data-chapter-list-header-container className="flex gap-2 items-center w-full pb-2">
                                     <h2 className="px-1">Chapters</h2>
                                     <div className="flex flex-1"></div>
-                                    <div>
+                                    <div className="flex gap-2 items-center">
+                                        {selectedProvider && selectedProvider !== "local-manga" && !!allChapters?.length && <SaveLocallyButton
+                                            mediaId={Number(mediaId)}
+                                            provider={selectedProvider}
+                                            disabled={isSendingDownloadRequest}
+                                        />}
                                         {!!unreadChapters?.length && <Button
                                             intent="white"
                                             rounded

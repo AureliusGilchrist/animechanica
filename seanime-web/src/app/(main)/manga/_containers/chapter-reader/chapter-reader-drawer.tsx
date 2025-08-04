@@ -84,6 +84,7 @@ export function ChapterReaderDrawer(props: ChapterDrawerProps) {
         data: pageContainer,
         isLoading: pageContainerLoading,
         isError: pageContainerError,
+        error: pageContainerErrorData,
         refetch: retryFetchPageContainer,
     } = useGetMangaEntryPages({
         mediaId: entry?.media?.id,
@@ -92,6 +93,16 @@ export function ChapterReaderDrawer(props: ChapterDrawerProps) {
         provider: currentChapter?.provider,
         doublePage: readingMode === MangaReadingMode.DOUBLE_PAGE,
     })
+
+    // Check if this is a chapter container not found error
+    const isChapterContainerMissing = React.useMemo(() => {
+        if (!pageContainerError || !pageContainerErrorData) return false
+        
+        // Check if the error response contains the CHAPTER_CONTAINER_NOT_FOUND error code
+        const errorResponse = pageContainerErrorData as any
+        return errorResponse?.error === "CHAPTER_CONTAINER_NOT_FOUND" || 
+               errorResponse?.message?.includes("Chapter list needs to be refreshed")
+    }, [pageContainerError, pageContainerErrorData])
 
     /**
      * Update the progress when the user confirms
@@ -331,18 +342,33 @@ export function ChapterReaderDrawer(props: ChapterDrawerProps) {
                 )} tabIndex={-1}
             >
                 {pageContainerError ? (
-                    <LuffyError
-                        title="Failed to load pages"
-                    >
-                        <p>An error occurred while trying to load pages for this chapter.</p>
-                        <p>Reload the page, reload sources or change the source.</p>
+                    isChapterContainerMissing ? (
+                        <LuffyError
+                            title="No chapters available"
+                        >
+                            <p>Chapter list needs to be refreshed.</p>
+                            <p>Please go back to the manga page to reload the chapter list.</p>
 
-                        <div className="mt-2">
-                            <Button intent="white" onClick={() => retryFetchPageContainer()}>
-                                Retry
-                            </Button>
-                        </div>
-                    </LuffyError>
+                            <div className="mt-2">
+                                <Button intent="white" onClick={() => setCurrentChapter(undefined)}>
+                                    Go back to manga page
+                                </Button>
+                            </div>
+                        </LuffyError>
+                    ) : (
+                        <LuffyError
+                            title="Failed to load pages"
+                        >
+                            <p>An error occurred while trying to load pages for this chapter.</p>
+                            <p>Reload the page, reload sources or change the source.</p>
+
+                            <div className="mt-2">
+                                <Button intent="white" onClick={() => retryFetchPageContainer()}>
+                                    Retry
+                                </Button>
+                            </div>
+                        </LuffyError>
+                    )
                 ) : (pageContainerLoading)
                     ? (<LoadingSpinner containerClass="h-full" />)
                     : (readingMode === MangaReadingMode.LONG_STRIP

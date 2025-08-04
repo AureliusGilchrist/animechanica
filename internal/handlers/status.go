@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"seanime/internal/api/anilist"
 	"seanime/internal/constants"
 	"seanime/internal/core"
 	"seanime/internal/database/models"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/goccy/go-json"
 	"github.com/labstack/echo/v4"
 )
 
@@ -49,17 +51,27 @@ var clientInfoCache = result.NewResultMap[string, util.ClientInfo]()
 // NewStatus returns a new Status struct.
 // It uses the RouteCtx to get the App instance containing the Database instance.
 func (h *Handler) NewStatus(c echo.Context) *Status {
-	var dbAcc *models.Account
 	var currentUser *user.User
 	var settings *models.Settings
 	var theme *models.Theme
-	//var mal *models.Mal
 
-	// Get the user from the database (if logged in)
-	if dbAcc, _ = h.App.Database.GetAccount(); dbAcc != nil {
-		currentUser, _ = user.NewUser(dbAcc)
-		if currentUser != nil {
-			currentUser.Token = "HIDDEN"
+	// Get session ID from context
+	sessionID := c.Get("Seanime-Client-Id").(string)
+
+	// Get the user from the session (if logged in)
+	if session, exists := h.App.SessionManager.GetSession(sessionID); exists && session.Token != "" {
+		// Unmarshal viewer data from session
+		var viewer anilist.GetViewer_Viewer
+		if err := json.Unmarshal(session.Viewer, &viewer); err == nil {
+			// Create user from session data
+			currentUser = &user.User{
+				Viewer:      &viewer,
+				Token:       "HIDDEN", // Hide the actual token
+				IsSimulated: false,
+			}
+		} else {
+			// If we can't unmarshal, create a simulated user
+			currentUser = user.NewSimulatedUser()
 		}
 	} else {
 		// If the user is not logged in, create a simulated user

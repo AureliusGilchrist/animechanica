@@ -2,16 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## v2.9.4
-
-- ⚡️ Migrated to Seanime's own anime metadata API
-- ⚡️ Release calendar: Watch status is now shown in popovers
-- 🦺 Fixed schedule missing some anime entries due to custom lists
-- 🦺 Watch history: Fixed resumed playback not working for local files
-- 🦺 Fixed streaming anime with no AniList schedule and no episode count
-- 🦺 Fixed 'Upload local lists to AniList' button not working
-- 🦺 Fixed repeated entries in 'Currently watching' list on the AniList page
-
 ## v2.9.3
 
 - ⚡️ Plugins: Added Textarea component, 'onSelect' event for input/textarea

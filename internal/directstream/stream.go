@@ -395,8 +395,7 @@ func loadContentType(path string, reader ...io.ReadSeekCloser) string {
 	case ".mp4":
 		return "video/mp4"
 	case ".mkv":
-		//return "video/x-matroska"
-		return "video/webm"
+		return "video/x-matroska"
 	case ".webm", ".m4v":
 		return "video/webm"
 	case ".avi":

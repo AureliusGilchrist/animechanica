@@ -23,6 +23,8 @@ export const __mainLibrary_paramsAtom = atomWithImmer<CollectionParams<"anime">>
 
 export const __mainLibrary_paramsInputAtom = atomWithImmer<CollectionParams<"anime">>(MAIN_LIBRARY_DEFAULT_PARAMS)
 
+
+
 export function useHandleLibraryCollection() {
     const serverStatus = useServerStatus()
 
@@ -149,7 +151,8 @@ export function useHandleLibraryCollection() {
                 ...params,
                 sorting: animeLibraryCollectionDefaultSorting,
             } as CollectionParams<"anime">
-            const arr = filterAnimeCollectionEntries(obj.entries,
+            const arr = filterAnimeCollectionEntries(
+                obj.entries,
                 paramsToApply,
                 serverStatus?.settings?.anilist?.enableAdultContent,
                 data.continueWatchingList,

@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/goccy/go-json"
 	"github.com/rs/zerolog"
@@ -57,6 +58,7 @@ type (
 		MediaId       int    `json:"mediaId"`
 		ChapterId     string `json:"chapterId"`
 		ChapterNumber string `json:"chapterNumber"`
+		MangaTitle    string `json:"mangaTitle,omitempty"` // Optional field for series-based directory naming
 	}
 
 	//+-------------------------------------------------------------------------------------------------------------------+
@@ -257,7 +259,7 @@ func (cd *Downloader) downloadChapterImages(queueInfo *QueueInfo) (err error) {
 				//cd.logger.Warn().Msg("chapter downloader: Download goroutine canceled")
 				return
 			default:
-				cd.downloadPage(page, destination, registry)
+				cd.downloadPage(page, destination, registry, queueInfo.DownloadID.Provider)
 			}
 		}(page, &registry)
 	}
@@ -279,12 +281,34 @@ func (cd *Downloader) downloadChapterImages(queueInfo *QueueInfo) (err error) {
 	return
 }
 
+// getProviderPageRateLimit returns the rate limiting delay for downloading individual pages from different providers
+func getProviderPageRateLimit(provider string) time.Duration {
+	switch provider {
+	case "mangadex":
+		return 200 * time.Millisecond // MangaDex has stricter rate limits
+	case "comick":
+		return 100 * time.Millisecond
+	case "mangafire":
+		return 150 * time.Millisecond
+	case "manganato":
+		return 80 * time.Millisecond
+	case "mangapill":
+		return 60 * time.Millisecond
+	default:
+		return 100 * time.Millisecond // Default rate limit
+	}
+}
+
 // downloadPage downloads a single page from the URL and saves it to the destination directory.
 // It also updates the Registry with the page information.
-func (cd *Downloader) downloadPage(page *hibikemanga.ChapterPage, destination string, registry *Registry) {
+func (cd *Downloader) downloadPage(page *hibikemanga.ChapterPage, destination string, registry *Registry, provider string) {
 
 	defer util.HandlePanicInModuleThen("manga/downloader/downloadImage", func() {
 	})
+
+	// Apply provider-specific rate limiting for page downloads
+	rateLimit := getProviderPageRateLimit(provider)
+	time.Sleep(rateLimit)
 
 	// Download image from URL
 
@@ -379,7 +403,31 @@ func (r *Registry) save(queueInfo *QueueInfo, destination string, logger *zerolo
 	return
 }
 
+// sanitizeFileName removes or replaces invalid characters for directory names
+func sanitizeFileName(name string) string {
+	// Replace invalid characters with underscores
+	invalidChars := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|"}
+	result := name
+	for _, char := range invalidChars {
+		result = strings.ReplaceAll(result, char, "_")
+	}
+	// Trim spaces and dots from the end
+	result = strings.TrimRight(result, ". ")
+	// Ensure it's not empty
+	if result == "" {
+		result = "Unknown_Series"
+	}
+	return result
+}
+
 func (cd *Downloader) getChapterDownloadDir(downloadId DownloadID) string {
+	// If manga title is provided, use series-based directory structure
+	if downloadId.MangaTitle != "" {
+		sanitizedTitle := sanitizeFileName(downloadId.MangaTitle)
+		chapterDirName := FormatChapterDirName(downloadId.Provider, downloadId.MediaId, downloadId.ChapterId, downloadId.ChapterNumber)
+		return filepath.Join(cd.downloadDir, sanitizedTitle, chapterDirName)
+	}
+	// Fallback to old flat structure for backward compatibility
 	return filepath.Join(cd.downloadDir, FormatChapterDirName(downloadId.Provider, downloadId.MediaId, downloadId.ChapterId, downloadId.ChapterNumber))
 }
 

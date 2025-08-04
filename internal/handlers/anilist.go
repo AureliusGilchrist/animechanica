@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"seanime/internal/api/anilist"
 	"seanime/internal/events"
+	"seanime/internal/platforms/anilist_platform"
 	"seanime/internal/util/result"
 	"strconv"
 	"time"
@@ -24,15 +25,23 @@ func (h *Handler) HandleGetAnimeCollection(c echo.Context) error {
 
 	bypassCache := c.Request().Method == "POST"
 
-	// Get the user's anilist collection
-	animeCollection, err := h.App.GetAnimeCollection(bypassCache)
+	// Get session ID from context
+	sessionID := c.Get("Seanime-Client-Id").(string)
+
+	// Check if user is authenticated
+	if !h.App.SessionManager.IsAuthenticated(sessionID) {
+		return h.RespondWithError(c, errors.New("not authenticated"))
+	}
+
+	// Get the user's anilist collection using session-based client
+	animeCollection, err := h.App.GetAnimeCollectionForSession(sessionID, bypassCache)
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
 
 	go func() {
 		if h.App.Settings != nil && h.App.Settings.GetLibrary().EnableManga {
-			_, _ = h.App.GetMangaCollection(bypassCache)
+			_, _ = h.App.GetMangaCollectionForSession(sessionID, bypassCache)
 			if bypassCache {
 				h.App.WSEventManager.SendEvent(events.RefreshedAnilistMangaCollection, nil)
 			}
@@ -52,8 +61,16 @@ func (h *Handler) HandleGetRawAnimeCollection(c echo.Context) error {
 
 	bypassCache := c.Request().Method == "POST"
 
-	// Get the user's anilist collection
-	animeCollection, err := h.App.GetRawAnimeCollection(bypassCache)
+	// Get session ID from context
+	sessionID := c.Get("Seanime-Client-Id").(string)
+
+	// Check if user is authenticated
+	if !h.App.SessionManager.IsAuthenticated(sessionID) {
+		return h.RespondWithError(c, errors.New("not authenticated"))
+	}
+
+	// Get the user's raw anime collection using session-based client
+	animeCollection, err := h.App.GetRawAnimeCollectionForSession(sessionID, bypassCache)
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
@@ -114,10 +131,6 @@ func (h *Handler) HandleEditAnilistListEntry(c echo.Context) error {
 
 //----------------------------------------------------------------------------------------------------------------------------------------------------
 
-var (
-	detailsCache = result.NewCache[int, *anilist.AnimeDetailsById_Media]()
-)
-
 // HandleGetAnilistAnimeDetails
 //
 //	@summary returns more details about an AniList anime entry.
@@ -127,26 +140,29 @@ var (
 //	@route /api/v1/anilist/media-details/{id} [GET]
 func (h *Handler) HandleGetAnilistAnimeDetails(c echo.Context) error {
 
-	mId, err := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
 
-	if details, ok := detailsCache.Get(mId); ok {
-		return h.RespondWithData(c, details)
+	// Check cache first
+	if cached, found := h.App.AnilistCacheManager.GetAnimeDetails(id); found {
+		h.App.Logger.Debug().Int("mediaID", id).Msg("Returning anime details from cache")
+		return c.JSON(200, cached)
 	}
-	details, err := h.App.AnilistPlatform.GetAnimeDetails(c.Request().Context(), mId)
+
+	details, err := h.App.AnilistPlatform.GetAnimeDetails(c.Request().Context(), id)
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
-	detailsCache.Set(mId, details)
 
-	return h.RespondWithData(c, details)
+	// Cache the result
+	h.App.AnilistCacheManager.SetAnimeDetails(id, details)
+
+	return c.JSON(200, details)
 }
 
 //----------------------------------------------------------------------------------------------------------------------------------------------------
-
-var studioDetailsMap = result.NewResultMap[int, *anilist.StudioDetails]()
 
 // HandleGetAnilistStudioDetails
 //
@@ -157,26 +173,27 @@ var studioDetailsMap = result.NewResultMap[int, *anilist.StudioDetails]()
 //	@route /api/v1/anilist/studio-details/{id} [GET]
 func (h *Handler) HandleGetAnilistStudioDetails(c echo.Context) error {
 
-	mId, err := strconv.Atoi(c.Param("id"))
+	studioId, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
 
-	if details, ok := studioDetailsMap.Get(mId); ok {
-		return h.RespondWithData(c, details)
+	// Check cache first
+	if cached, found := h.App.AnilistCacheManager.GetStudio(studioId); found {
+		h.App.Logger.Debug().Int("studioID", studioId).Msg("Returning studio details from cache")
+		return h.RespondWithData(c, cached)
 	}
-	details, err := h.App.AnilistPlatform.GetStudioDetails(c.Request().Context(), mId)
+
+	// Fetch from API
+	studio, err := h.App.AnilistPlatform.GetStudioDetails(c.Request().Context(), studioId)
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
 
-	go func() {
-		if details != nil {
-			studioDetailsMap.Set(mId, details)
-		}
-	}()
+	// Cache the result
+	h.App.AnilistCacheManager.SetStudio(studioId, studio)
 
-	return h.RespondWithData(c, details)
+	return h.RespondWithData(c, studio)
 }
 
 //----------------------------------------------------------------------------------------------------------------------------------------------------
@@ -433,8 +450,6 @@ func (h *Handler) HandleAnilistListMissedSequels(c echo.Context) error {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-var anilistStatsCache = result.NewCache[int, *anilist.Stats]()
-
 // HandleGetAniListStats
 //
 //	@summary returns the anilist stats.
@@ -442,25 +457,39 @@ var anilistStatsCache = result.NewCache[int, *anilist.Stats]()
 //	@route /api/v1/anilist/stats [GET]
 //	@returns anilist.Stats
 func (h *Handler) HandleGetAniListStats(c echo.Context) error {
-	cached, ok := anilistStatsCache.Get(0)
-	if ok {
+
+	// Get session ID from context
+	sessionID := c.Get("Seanime-Client-Id").(string)
+
+	// Check if user is authenticated
+	if !h.App.SessionManager.IsAuthenticated(sessionID) {
+		return h.RespondWithError(c, errors.New("not authenticated"))
+	}
+
+	// Check cache first
+	if cached, found := h.App.AnilistCacheManager.GetViewerStats(sessionID); found {
+		h.App.Logger.Debug().Str("sessionID", sessionID).Msg("Returning viewer stats from cache")
 		return h.RespondWithData(c, cached)
 	}
 
-	stats, err := h.App.AnilistPlatform.GetViewerStats(c.Request().Context())
+	// Get session and create temporary platform
+	session, found := h.App.SessionManager.GetSession(sessionID)
+	if !found {
+		return h.RespondWithError(c, errors.New("session not found"))
+	}
+
+	// Create session-specific platform
+	platform := anilist_platform.NewAnilistPlatform(session.Client, h.App.Logger)
+	platform.SetUsername(session.Username)
+
+	// Get viewer stats
+	stats, err := platform.GetViewerStats(c.Request().Context())
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
 
-	ret, err := anilist.GetStats(
-		c.Request().Context(),
-		stats,
-	)
-	if err != nil {
-		return h.RespondWithError(c, err)
-	}
+	// Cache the result
+	h.App.AnilistCacheManager.SetViewerStats(sessionID, stats)
 
-	anilistStatsCache.SetT(0, ret, time.Hour*1)
-
-	return h.RespondWithData(c, ret)
+	return h.RespondWithData(c, stats)
 }

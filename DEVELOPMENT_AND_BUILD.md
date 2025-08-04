@@ -71,7 +71,7 @@ For development, you should be familiar with both Go and React.
    - Change the port in the `config.toml` located in the development data directory to `43000`. The web interface will connect to this port during development. Change the host to `0.0.0.0` to allow connections from other devices.
    - Re-run the server with the updated configuration.
 
-   The server will be available at `http://127.0.0.1:43000`.
+   The server will be available at `http://0.0.0.0:43000`.
 
 #### Web Interface Development
 
@@ -90,7 +90,7 @@ For development, you should be familiar with both Go and React.
    npm run dev
    ```
 
-   The development web interface will be accessible at `http://127.0.0.1:43210`.
+   The development web interface will be accessible at `http://0.0.0.0:43210`.
 
 **Note**: During development, the web interface is served by the Next.js development server on port `43210`.
 The Next.js development environment is configured such that all requests are made to the Go server running on port `43000`.

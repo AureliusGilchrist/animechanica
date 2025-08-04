@@ -174,6 +174,10 @@ func (a *App) initModulesOnce() {
 	// +---------------------+
 	// |  Manga Downloader   |
 	// +---------------------+
+	// Reset any chapters that were stuck in 'downloading' state on previous shutdown
+	if err := a.Database.ResetDownloadingChapterDownloadQueueItems(); err != nil {
+		a.Logger.Error().Err(err).Msg("Failed to reset stuck manga download queue items on startup")
+	}
 
 	a.MangaDownloader = manga.NewDownloader(&manga.NewDownloaderOptions{
 		Database:       a.Database,
@@ -392,23 +396,42 @@ func (a *App) InitOrRefreshModules() {
 
 	if settings.Torrent != nil {
 		// Init qBittorrent
+		// Determine if we should disable binary use (for Docker/external qBittorrent)
+		disableBinaryUse := settings.Torrent.QBittorrentPath == ""
+		
 		qbit := qbittorrent.NewClient(&qbittorrent.NewClientOptions{
-			Logger:   a.Logger,
-			Username: settings.Torrent.QBittorrentUsername,
-			Password: settings.Torrent.QBittorrentPassword,
-			Port:     settings.Torrent.QBittorrentPort,
-			Host:     settings.Torrent.QBittorrentHost,
-			Path:     settings.Torrent.QBittorrentPath,
-			Tags:     settings.Torrent.QBittorrentTags,
+			Logger:           a.Logger,
+			Username:         settings.Torrent.QBittorrentUsername,
+			Password:         settings.Torrent.QBittorrentPassword,
+			Port:             settings.Torrent.QBittorrentPort,
+			Host:             settings.Torrent.QBittorrentHost,
+			Path:             settings.Torrent.QBittorrentPath,
+			DisableBinaryUse: disableBinaryUse,
+			Tags:             settings.Torrent.QBittorrentTags,
 		})
+		
+		if disableBinaryUse {
+			a.Logger.Info().Str("host", settings.Torrent.QBittorrentHost).Int("port", settings.Torrent.QBittorrentPort).Msg("app: Using external/Docker qBittorrent instance")
+		} else {
+			a.Logger.Info().Str("path", settings.Torrent.QBittorrentPath).Msg("app: Using local qBittorrent binary")
+		}
+		
 		// Login to qBittorrent
 		go func() {
 			if settings.Torrent.Default == "qbittorrent" {
 				err = qbit.Login()
 				if err != nil {
-					a.Logger.Error().Err(err).Msg("app: Failed to login to qBittorrent")
+					if disableBinaryUse {
+						a.Logger.Error().Err(err).Str("host", settings.Torrent.QBittorrentHost).Int("port", settings.Torrent.QBittorrentPort).Msg("app: Failed to login to external/Docker qBittorrent - ensure container is running and credentials are correct")
+					} else {
+						a.Logger.Error().Err(err).Msg("app: Failed to login to local qBittorrent")
+					}
 				} else {
-					a.Logger.Info().Msg("app: Logged in to qBittorrent")
+					if disableBinaryUse {
+						a.Logger.Info().Str("host", settings.Torrent.QBittorrentHost).Int("port", settings.Torrent.QBittorrentPort).Msg("app: Successfully logged in to external/Docker qBittorrent")
+					} else {
+						a.Logger.Info().Msg("app: Successfully logged in to local qBittorrent")
+					}
 				}
 			}
 		}()
@@ -438,6 +461,7 @@ func (a *App) InitOrRefreshModules() {
 			TorrentRepository: a.TorrentRepository,
 			Provider:          settings.Torrent.Default,
 			MetadataProvider:  a.MetadataProvider,
+			TorrentSettings:   settings.Torrent,
 		})
 
 		a.TorrentClientRepository.InitActiveTorrentCount(settings.Torrent.ShowActiveTorrentCount, a.WSEventManager)
@@ -692,7 +716,7 @@ func (a *App) performActionsOnce() {
 
 		if a.Settings.GetLibrary().OpenWebURLOnStart {
 			// Open the web URL
-			err := browser.OpenURL(a.Config.GetServerURI("127.0.0.1"))
+			err := browser.OpenURL(a.Config.GetServerURI("0.0.0.0"))
 			if err != nil {
 				a.Logger.Warn().Err(err).Msg("app: Failed to open web URL, please open it manually in your browser")
 			} else {

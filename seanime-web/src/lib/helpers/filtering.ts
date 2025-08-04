@@ -30,14 +30,20 @@ type BaseCollectionSorting =
     | "TITLE_DESC"
 
 
-type CollectionSorting<T extends CollectionType> = BaseCollectionSorting | (T extends "anime" ?
+export type CollectionSorting<T extends CollectionType> = BaseCollectionSorting | (T extends "anime" ?
     "PROGRESS_DESC"
     | "PROGRESS"
     | "AIRDATE"
     | "AIRDATE_DESC"
+    // TODO: Add when data is available
+    // | "STUDIO"
+    // | "STUDIO_DESC"
     : T extends "manga" ?
         "PROGRESS"
         | "PROGRESS_DESC"
+        // TODO: Add when data is available
+        // | "MANGAKA"
+        // | "MANGAKA_DESC"
         : never)
 
 
@@ -93,12 +99,18 @@ export const ANIME_COLLECTION_SORTING_OPTIONS = [
     { label: "Least unwatched episodes", value: "UNWATCHED_EPISODES" },
     { label: "Most recent watch", value: "LAST_WATCHED_DESC" },
     { label: "Least recent watch", value: "LAST_WATCHED" },
+    // TODO: Add Studio sorting when studio data is available in AL_BaseAnime
+    // { label: "Studio (A-Z)", value: "STUDIO" },
+    // { label: "Studio (Z-A)", value: "STUDIO_DESC" },
     ...COLLECTION_SORTING_OPTIONS,
 ]
 
 export const MANGA_COLLECTION_SORTING_OPTIONS = [
     { label: "Most unread chapters", value: "UNREAD_CHAPTERS_DESC" },
     { label: "Least unread chapters", value: "UNREAD_CHAPTERS" },
+    // TODO: Add Mangaka sorting when staff/author data is available in AL_BaseManga
+    // { label: "Mangaka (A-Z)", value: "MANGAKA" },
+    // { label: "Mangaka (Z-A)", value: "MANGAKA_DESC" },
     ...COLLECTION_SORTING_OPTIONS,
 ]
 
@@ -398,6 +410,14 @@ export function filterAnimeCollectionEntries<T extends Anime_LibraryCollectionEn
     if (getParamValue(params.sorting) === "LAST_WATCHED_DESC") {
         arr = sortBy(arr, n => watchHistory?.[n.media?.id!]?.timeUpdated || new Date(1000, 1, 1).toISOString()).reverse()
     }
+
+    // TODO: Studio sorting - requires studio data to be included in AL_BaseAnime type
+    // if (getParamValue(params.sorting) === "STUDIO") {
+    //     arr = sortBy(arr, n => "Unknown Studio")
+    // }
+    // if (getParamValue(params.sorting) === "STUDIO_DESC") {
+    //     arr = sortBy(arr, n => "Unknown Studio").reverse()
+    // }
 
     return arr
 }

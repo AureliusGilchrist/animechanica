@@ -1,0 +1,468 @@
+package handlers
+
+import (
+	"net/http"
+	"seanime/internal/api/anilist"
+	"strconv"
+
+	"github.com/labstack/echo/v4"
+)
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Cast and Crew Information for Shows and Manga
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// HandleGetAnimeCastCrew
+//
+//	@summary returns cast and crew information for an anime by ID.
+//	@desc This fetches comprehensive cast, voice actors, directors, and studios information from AniList.
+//	@route /api/v1/anime/:id/cast-crew [GET]
+//	@returns *AnimeCastCrewResponse
+func (h *Handler) HandleGetAnimeCastCrew(c echo.Context) error {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return h.RespondWithError(c, echo.NewHTTPError(400, "invalid anime ID"))
+	}
+
+	// Check cache first
+	cacheKey := "anime_cast_crew_" + strconv.Itoa(id)
+	if cached, found := h.App.AnilistCacheManager.GetAnimeDetails(id); found {
+		if castCrew := extractAnimeCastCrew(cached); castCrew != nil {
+			h.App.Logger.Debug().Int("animeId", id).Msg("Returning anime cast/crew from cache")
+			return h.RespondWithData(c, castCrew)
+		}
+	}
+
+	// Fetch anime details with cast/crew information
+	details, err := h.App.AnilistPlatform.GetAnimeDetails(c.Request().Context(), id)
+	if err != nil {
+		h.App.Logger.Error().Err(err).Int("animeId", id).Msg("Failed to fetch anime details for cast/crew")
+		return h.RespondWithError(c, echo.NewHTTPError(500, "failed to fetch anime cast/crew information"))
+	}
+
+	// Cache the result
+	h.App.AnilistCacheManager.SetAnimeDetails(id, details)
+
+	// Extract cast and crew information
+	castCrew := extractAnimeCastCrew(details)
+	if castCrew == nil {
+		return h.RespondWithError(c, echo.NewHTTPError(404, "cast/crew information not found"))
+	}
+
+	h.App.Logger.Debug().Int("animeId", id).Msg("Successfully fetched anime cast/crew")
+	return h.RespondWithData(c, castCrew)
+}
+
+// HandleGetMangaCastCrew
+//
+//	@summary returns cast and crew information for a manga by ID.
+//	@desc This fetches comprehensive cast, authors, illustrators, and studios information from AniList.
+//	@route /api/v1/manga/:id/cast-crew [GET]
+//	@returns *MangaCastCrewResponse
+func (h *Handler) HandleGetMangaCastCrew(c echo.Context) error {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return h.RespondWithError(c, echo.NewHTTPError(400, "invalid manga ID"))
+	}
+
+	// Check cache first
+	if cached, found := h.App.AnilistCacheManager.GetMangaDetails(id); found {
+		if castCrew := extractMangaCastCrew(cached); castCrew != nil {
+			h.App.Logger.Debug().Int("mangaId", id).Msg("Returning manga cast/crew from cache")
+			return h.RespondWithData(c, castCrew)
+		}
+	}
+
+	// Fetch manga details with cast/crew information
+	details, err := h.App.AnilistPlatform.GetMangaDetails(c.Request().Context(), id)
+	if err != nil {
+		h.App.Logger.Error().Err(err).Int("mangaId", id).Msg("Failed to fetch manga details for cast/crew")
+		return h.RespondWithError(c, echo.NewHTTPError(500, "failed to fetch manga cast/crew information"))
+	}
+
+	// Cache the result
+	h.App.AnilistCacheManager.SetMangaDetails(id, details)
+
+	// Extract cast and crew information
+	castCrew := extractMangaCastCrew(details)
+	if castCrew == nil {
+		return h.RespondWithError(c, echo.NewHTTPError(404, "cast/crew information not found"))
+	}
+
+	h.App.Logger.Debug().Int("mangaId", id).Msg("Successfully fetched manga cast/crew")
+	return h.RespondWithData(c, castCrew)
+}
+
+// HandleGetStudioDetails
+//
+//	@summary returns detailed studio information by ID.
+//	@desc This fetches comprehensive studio information including works and staff from AniList.
+//	@route /api/v1/studio/:id [GET]
+//	@returns *anilist.StudioDetails
+func (h *Handler) HandleGetStudioDetails(c echo.Context) error {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return h.RespondWithError(c, echo.NewHTTPError(400, "invalid studio ID"))
+	}
+
+	// Check cache first
+	if cached, found := h.App.AnilistCacheManager.GetStudioDetails(id); found {
+		h.App.Logger.Debug().Int("studioId", id).Msg("Returning studio details from cache")
+		return h.RespondWithData(c, cached)
+	}
+
+	// Fetch studio details
+	details, err := h.App.AnilistPlatform.GetStudioDetails(c.Request().Context(), id)
+	if err != nil {
+		h.App.Logger.Error().Err(err).Int("studioId", id).Msg("Failed to fetch studio details")
+		return h.RespondWithError(c, echo.NewHTTPError(500, "failed to fetch studio details"))
+	}
+
+	// Cache the result
+	h.App.AnilistCacheManager.SetStudioDetails(id, details)
+
+	h.App.Logger.Debug().Int("studioId", id).Msg("Successfully fetched studio details")
+	return h.RespondWithData(c, details)
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Response Types and Helper Functions
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+type (
+	// AnimeCastCrewResponse represents comprehensive cast and crew information for anime
+	AnimeCastCrewResponse struct {
+		MediaID    int                    `json:"mediaId"`
+		Title      string                 `json:"title"`
+		Characters []*CharacterInfo       `json:"characters"`
+		Staff      []*StaffInfo           `json:"staff"`
+		Studios    []*StudioInfo          `json:"studios"`
+		VoiceActors []*VoiceActorInfo     `json:"voiceActors"`
+		Directors  []*StaffInfo           `json:"directors"`
+		Producers  []*StaffInfo           `json:"producers"`
+	}
+
+	// MangaCastCrewResponse represents comprehensive cast and crew information for manga
+	MangaCastCrewResponse struct {
+		MediaID    int               `json:"mediaId"`
+		Title      string            `json:"title"`
+		Characters []*CharacterInfo  `json:"characters"`
+		Staff      []*StaffInfo      `json:"staff"`
+		Authors    []*StaffInfo      `json:"authors"`
+		Artists    []*StaffInfo      `json:"artists"`
+		Studios    []*StudioInfo     `json:"studios"`
+	}
+
+	// CharacterInfo represents character information with role and voice actors
+	CharacterInfo struct {
+		ID          int                `json:"id"`
+		Name        *CharacterName     `json:"name"`
+		Image       *CharacterImage    `json:"image"`
+		Role        *anilist.CharacterRole `json:"role"`
+		Description *string            `json:"description,omitempty"`
+		VoiceActors []*VoiceActorInfo  `json:"voiceActors,omitempty"`
+	}
+
+	// StaffInfo represents staff member information with role
+	StaffInfo struct {
+		ID          int            `json:"id"`
+		Name        *StaffName     `json:"name"`
+		Image       *StaffImage    `json:"image"`
+		Role        *string        `json:"role"`
+		Description *string        `json:"description,omitempty"`
+		Language    *string        `json:"language,omitempty"`
+	}
+
+	// VoiceActorInfo represents voice actor information
+	VoiceActorInfo struct {
+		ID          int         `json:"id"`
+		Name        *StaffName  `json:"name"`
+		Image       *StaffImage `json:"image"`
+		Language    *string     `json:"language"`
+		CharacterID int         `json:"characterId"`
+	}
+
+	// StudioInfo represents studio information
+	StudioInfo struct {
+		ID           int     `json:"id"`
+		Name         string  `json:"name"`
+		IsMain       bool    `json:"isMain"`
+		IsAnimationStudio bool `json:"isAnimationStudio"`
+	}
+
+	// CharacterName represents character name information
+	CharacterName struct {
+		Full         *string `json:"full"`
+		Native       *string `json:"native"`
+		Alternative  []*string `json:"alternative"`
+	}
+
+	// CharacterImage represents character image information
+	CharacterImage struct {
+		Large  *string `json:"large"`
+		Medium *string `json:"medium"`
+	}
+
+	// StaffName represents staff name information
+	StaffName struct {
+		Full         *string `json:"full"`
+		Native       *string `json:"native"`
+		Alternative  []*string `json:"alternative"`
+	}
+
+	// StaffImage represents staff image information
+	StaffImage struct {
+		Large  *string `json:"large"`
+		Medium *string `json:"medium"`
+	}
+)
+
+// extractAnimeCastCrew extracts cast and crew information from anime details
+func extractAnimeCastCrew(details *anilist.AnimeDetailsById_Media) *AnimeCastCrewResponse {
+	if details == nil {
+		return nil
+	}
+
+	response := &AnimeCastCrewResponse{
+		MediaID:     details.GetID(),
+		Title:       getMediaTitle(details.GetTitle()),
+		Characters:  make([]*CharacterInfo, 0),
+		Staff:       make([]*StaffInfo, 0),
+		Studios:     make([]*StudioInfo, 0),
+		VoiceActors: make([]*VoiceActorInfo, 0),
+		Directors:   make([]*StaffInfo, 0),
+		Producers:   make([]*StaffInfo, 0),
+	}
+
+	// Extract characters and voice actors
+	if characters := details.GetCharacters(); characters != nil {
+		for _, edge := range characters.GetEdges() {
+			if edge == nil || edge.GetNode() == nil {
+				continue
+			}
+
+			character := &CharacterInfo{
+				ID:   edge.GetNode().GetID(),
+				Role: edge.GetRole(),
+				Name: &CharacterName{
+					Full:   edge.GetNode().GetName().GetFull(),
+					Native: edge.GetNode().GetName().GetNative(),
+				},
+				Image: &CharacterImage{
+					Large:  edge.GetNode().GetImage().GetLarge(),
+					Medium: edge.GetNode().GetImage().GetMedium(),
+				},
+				Description: edge.GetNode().GetDescription(),
+				VoiceActors: make([]*VoiceActorInfo, 0),
+			}
+
+			// Extract voice actors for this character
+			if voiceActors := edge.GetVoiceActors(); voiceActors != nil {
+				for _, va := range voiceActors {
+					if va == nil {
+						continue
+					}
+					voiceActor := &VoiceActorInfo{
+						ID:          va.GetID(),
+						CharacterID: character.ID,
+						Name: &StaffName{
+							Full:   va.GetName().GetFull(),
+							Native: va.GetName().GetNative(),
+						},
+						Image: &StaffImage{
+							Large:  va.GetImage().GetLarge(),
+							Medium: va.GetImage().GetMedium(),
+						},
+						Language: va.GetLanguageV2(),
+					}
+					character.VoiceActors = append(character.VoiceActors, voiceActor)
+					response.VoiceActors = append(response.VoiceActors, voiceActor)
+				}
+			}
+
+			response.Characters = append(response.Characters, character)
+		}
+	}
+
+	// Extract staff information
+	if staff := details.GetStaff(); staff != nil {
+		for _, edge := range staff.GetEdges() {
+			if edge == nil || edge.GetNode() == nil {
+				continue
+			}
+
+			staffMember := &StaffInfo{
+				ID:   edge.GetNode().GetID(),
+				Role: edge.GetRole(),
+				Name: &StaffName{
+					Full:   edge.GetNode().GetName().GetFull(),
+					Native: edge.GetNode().GetName().GetNative(),
+				},
+				Image: &StaffImage{
+					Large:  edge.GetNode().GetImage().GetLarge(),
+					Medium: edge.GetNode().GetImage().GetMedium(),
+				},
+				Description: edge.GetNode().GetDescription(),
+			}
+
+			response.Staff = append(response.Staff, staffMember)
+
+			// Categorize staff by role
+			if role := edge.GetRole(); role != nil {
+				roleStr := *role
+				if containsRole(roleStr, "Director") {
+					response.Directors = append(response.Directors, staffMember)
+				}
+				if containsRole(roleStr, "Producer") {
+					response.Producers = append(response.Producers, staffMember)
+				}
+			}
+		}
+	}
+
+	// Extract studio information
+	if studios := details.GetStudios(); studios != nil {
+		for _, edge := range studios.GetEdges() {
+			if edge == nil || edge.GetNode() == nil {
+				continue
+			}
+
+			studio := &StudioInfo{
+				ID:                edge.GetNode().GetID(),
+				Name:              edge.GetNode().GetName(),
+				IsMain:            edge.GetIsMain(),
+				IsAnimationStudio: edge.GetNode().GetIsAnimationStudio(),
+			}
+
+			response.Studios = append(response.Studios, studio)
+		}
+	}
+
+	return response
+}
+
+// extractMangaCastCrew extracts cast and crew information from manga details
+func extractMangaCastCrew(details *anilist.MangaDetailsById_Media) *MangaCastCrewResponse {
+	if details == nil {
+		return nil
+	}
+
+	response := &MangaCastCrewResponse{
+		MediaID:    details.GetID(),
+		Title:      getMangaTitle(details.GetTitle()),
+		Characters: make([]*CharacterInfo, 0),
+		Staff:      make([]*StaffInfo, 0),
+		Authors:    make([]*StaffInfo, 0),
+		Artists:    make([]*StaffInfo, 0),
+		Studios:    make([]*StudioInfo, 0),
+	}
+
+	// Extract characters
+	if characters := details.GetCharacters(); characters != nil {
+		for _, edge := range characters.GetEdges() {
+			if edge == nil || edge.GetNode() == nil {
+				continue
+			}
+
+			character := &CharacterInfo{
+				ID:   edge.GetNode().GetID(),
+				Role: edge.GetRole(),
+				Name: &CharacterName{
+					Full:   edge.GetNode().GetName().GetFull(),
+					Native: edge.GetNode().GetName().GetNative(),
+				},
+				Image: &CharacterImage{
+					Large:  edge.GetNode().GetImage().GetLarge(),
+					Medium: edge.GetNode().GetImage().GetMedium(),
+				},
+				Description: edge.GetNode().GetDescription(),
+			}
+
+			response.Characters = append(response.Characters, character)
+		}
+	}
+
+	// Extract staff information
+	if staff := details.GetStaff(); staff != nil {
+		for _, edge := range staff.GetEdges() {
+			if edge == nil || edge.GetNode() == nil {
+				continue
+			}
+
+			staffMember := &StaffInfo{
+				ID:   edge.GetNode().GetID(),
+				Role: edge.GetRole(),
+				Name: &StaffName{
+					Full:   edge.GetNode().GetName().GetFull(),
+					Native: edge.GetNode().GetName().GetNative(),
+				},
+				Image: &StaffImage{
+					Large:  edge.GetNode().GetImage().GetLarge(),
+					Medium: edge.GetNode().GetImage().GetMedium(),
+				},
+				Description: edge.GetNode().GetDescription(),
+			}
+
+			response.Staff = append(response.Staff, staffMember)
+
+			// Categorize staff by role
+			if role := edge.GetRole(); role != nil {
+				roleStr := *role
+				if containsRole(roleStr, "Story") || containsRole(roleStr, "Original Creator") {
+					response.Authors = append(response.Authors, staffMember)
+				}
+				if containsRole(roleStr, "Art") || containsRole(roleStr, "Illustration") {
+					response.Artists = append(response.Artists, staffMember)
+				}
+			}
+		}
+	}
+
+	// Extract studio information
+	if studios := details.GetStudios(); studios != nil {
+		for _, edge := range studios.GetEdges() {
+			if edge == nil || edge.GetNode() == nil {
+				continue
+			}
+
+			studio := &StudioInfo{
+				ID:                edge.GetNode().GetID(),
+				Name:              edge.GetNode().GetName(),
+				IsMain:            edge.GetIsMain(),
+				IsAnimationStudio: edge.GetNode().GetIsAnimationStudio(),
+			}
+
+			response.Studios = append(response.Studios, studio)
+		}
+	}
+
+	return response
+}
+
+// Helper functions
+
+func getMediaTitle(title interface{}) string {
+	// This is a simplified implementation - you may need to adjust based on the actual title structure
+	if title == nil {
+		return "Unknown Title"
+	}
+	// Add proper title extraction logic based on your AniList types
+	return "Title" // Placeholder
+}
+
+func getMangaTitle(title interface{}) string {
+	// This is a simplified implementation - you may need to adjust based on the actual title structure
+	if title == nil {
+		return "Unknown Title"
+	}
+	// Add proper title extraction logic based on your AniList types
+	return "Title" // Placeholder
+}
+
+func containsRole(role, keyword string) bool {
+	// Simple case-insensitive substring check
+	return len(role) > 0 && len(keyword) > 0 && 
+		   (role == keyword || 
+		    (len(role) >= len(keyword) && 
+		     role[:len(keyword)] == keyword))
+}

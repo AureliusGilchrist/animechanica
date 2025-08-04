@@ -11,6 +11,58 @@ export type Nullish<T> = T | null | undefined
  * - Filename: models_gen.go
  * - Package: anilist
  * @description
+ *  Score & Watcher stats for airing anime by episode and mid-week
+ */
+export type AL_AiringProgression = {
+    episode?: number
+    score?: number
+    watching?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Media Airing Schedule. NOTE: We only aim to guarantee that FUTURE airing data is present and accurate.
+ */
+export type AL_AiringSchedule = {
+    id: number
+    airingAt: number
+    timeUntilAiring: number
+    episode: number
+    mediaId: number
+    media?: AL_Media
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_AiringScheduleConnection = {
+    edges?: Array<AL_AiringScheduleEdge>
+    nodes?: Array<AL_AiringSchedule>
+    pageInfo?: AL_PageInfo
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  AiringSchedule connection edge
+ */
+export type AL_AiringScheduleEdge = {
+    node?: AL_AiringSchedule
+    id?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
  *  Airing schedule sort enums
  */
 export type AL_AiringSort = "ID" |
@@ -611,9 +663,138 @@ export type AL_BaseManga_Title = {
  * - Filename: models_gen.go
  * - Package: anilist
  * @description
+ *  A character that features in an anime or manga
+ */
+export type AL_Character = {
+    id: number
+    name?: AL_CharacterName
+    image?: AL_CharacterImage
+    description?: string
+    gender?: string
+    dateOfBirth?: AL_FuzzyDate
+    age?: string
+    bloodType?: string
+    isFavourite: boolean
+    isFavouriteBlocked: boolean
+    siteUrl?: string
+    media?: AL_MediaConnection
+    updatedAt?: number
+    favourites?: number
+    modNotes?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_CharacterConnection = {
+    edges?: Array<AL_CharacterEdge>
+    nodes?: Array<AL_Character>
+    pageInfo?: AL_PageInfo
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Character connection edge
+ */
+export type AL_CharacterEdge = {
+    node?: AL_Character
+    id?: number
+    role?: AL_CharacterRole
+    name?: string
+    voiceActors?: Array<AL_Staff>
+    voiceActorRoles?: Array<AL_StaffRoleType>
+    media?: Array<AL_Media>
+    favouriteOrder?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_CharacterImage = {
+    large?: string
+    medium?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  The names of the character
+ */
+export type AL_CharacterName = {
+    first?: string
+    middle?: string
+    last?: string
+    full?: string
+    native?: string
+    alternative?: Array<string>
+    alternativeSpoiler?: Array<string>
+    userPreferred?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
  *  The role the character plays in the media
  */
 export type AL_CharacterRole = "MAIN" | "SUPPORTING" | "BACKGROUND"
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_ExternalLinkType = "INFO" | "STREAMING" | "SOCIAL"
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  User's favourite anime, manga, characters, staff & studios
+ */
+export type AL_Favourites = {
+    anime?: AL_MediaConnection
+    manga?: AL_MediaConnection
+    characters?: AL_CharacterConnection
+    staff?: AL_StaffConnection
+    studios?: AL_StudioConnection
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  User's format statistics
+ */
+export type AL_FormatStats = {
+    format?: AL_MediaFormat
+    amount?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Date object that allows for incomplete date values (fuzzy)
+ */
+export type AL_FuzzyDate = {
+    year?: number
+    month?: number
+    day?: number
+}
 
 /**
  * - Filepath: internal/api/anilist/models_gen.go
@@ -626,6 +807,20 @@ export type AL_FuzzyDateInput = {
     year?: number
     month?: number
     day?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  User's genre statistics
+ */
+export type AL_GenreStats = {
+    genre?: string
+    amount?: number
+    meanScore?: number
+    timeWatched?: number
 }
 
 /**
@@ -660,6 +855,16 @@ export type AL_GetViewer_Viewer_Options = {
     displayAdultContent?: boolean
     airingNotifications?: boolean
     profileColor?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_ListActivityOption = {
+    disabled?: boolean
+    type?: AL_MediaListStatus
 }
 
 /**
@@ -769,6 +974,18 @@ export type AL_ListRecentAnime_Page_PageInfo = {
     perPage?: number
     currentPage?: number
     lastPage?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  User's list score statistics
+ */
+export type AL_ListScoreStats = {
+    meanScore?: number
+    standardDeviation?: number
 }
 
 /**
@@ -1040,6 +1257,137 @@ export type AL_MangaStats = {
  * - Filename: models_gen.go
  * - Package: anilist
  * @description
+ *  Anime or Manga
+ */
+export type AL_Media = {
+    id: number
+    idMal?: number
+    title?: AL_MediaTitle
+    type?: AL_MediaType
+    format?: AL_MediaFormat
+    status?: AL_MediaStatus
+    description?: string
+    startDate?: AL_FuzzyDate
+    endDate?: AL_FuzzyDate
+    season?: AL_MediaSeason
+    seasonYear?: number
+    seasonInt?: number
+    episodes?: number
+    duration?: number
+    chapters?: number
+    volumes?: number
+    countryOfOrigin?: string
+    isLicensed?: boolean
+    source?: AL_MediaSource
+    hashtag?: string
+    trailer?: AL_MediaTrailer
+    updatedAt?: number
+    coverImage?: AL_MediaCoverImage
+    bannerImage?: string
+    genres?: Array<string>
+    synonyms?: Array<string>
+    averageScore?: number
+    meanScore?: number
+    popularity?: number
+    isLocked?: boolean
+    trending?: number
+    favourites?: number
+    tags?: Array<AL_MediaTag>
+    relations?: AL_MediaConnection
+    characters?: AL_CharacterConnection
+    staff?: AL_StaffConnection
+    studios?: AL_StudioConnection
+    isFavourite: boolean
+    isFavouriteBlocked: boolean
+    isAdult?: boolean
+    nextAiringEpisode?: AL_AiringSchedule
+    airingSchedule?: AL_AiringScheduleConnection
+    trends?: AL_MediaTrendConnection
+    externalLinks?: Array<AL_MediaExternalLink>
+    streamingEpisodes?: Array<AL_MediaStreamingEpisode>
+    rankings?: Array<AL_MediaRank>
+    mediaListEntry?: AL_MediaList
+    reviews?: AL_ReviewConnection
+    recommendations?: AL_RecommendationConnection
+    stats?: AL_MediaStats
+    siteUrl?: string
+    autoCreateForumThread?: boolean
+    isRecommendationBlocked?: boolean
+    isReviewBlocked?: boolean
+    modNotes?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_MediaConnection = {
+    edges?: Array<AL_MediaEdge>
+    nodes?: Array<AL_Media>
+    pageInfo?: AL_PageInfo
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_MediaCoverImage = {
+    extraLarge?: string
+    large?: string
+    medium?: string
+    color?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Media connection edge
+ */
+export type AL_MediaEdge = {
+    node?: AL_Media
+    id?: number
+    relationType?: AL_MediaRelation
+    isMainStudio: boolean
+    characters?: Array<AL_Character>
+    characterRole?: AL_CharacterRole
+    characterName?: string
+    roleNotes?: string
+    dubGroup?: string
+    staffRole?: string
+    voiceActors?: Array<AL_Staff>
+    voiceActorRoles?: Array<AL_StaffRoleType>
+    favouriteOrder?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  An external link to another site related to the media or staff member
+ */
+export type AL_MediaExternalLink = {
+    id: number
+    url?: string
+    site: string
+    siteId?: number
+    type?: AL_ExternalLinkType
+    language?: string
+    color?: string
+    icon?: string
+    notes?: string
+    isDisabled?: boolean
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
  *  The format the media was released in
  */
 export type AL_MediaFormat = "TV" |
@@ -1058,6 +1406,53 @@ export type AL_MediaFormat = "TV" |
  * - Filename: models_gen.go
  * - Package: anilist
  * @description
+ *  List of anime or manga
+ */
+export type AL_MediaList = {
+    id: number
+    userId: number
+    mediaId: number
+    status?: AL_MediaListStatus
+    score?: number
+    progress?: number
+    progressVolumes?: number
+    repeat?: number
+    priority?: number
+    private?: boolean
+    notes?: string
+    hiddenFromStatusLists?: boolean
+    customLists?: string
+    advancedScores?: string
+    startedAt?: AL_FuzzyDate
+    completedAt?: AL_FuzzyDate
+    updatedAt?: number
+    createdAt?: number
+    media?: AL_Media
+    user?: AL_User
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  A user's list options
+ */
+export type AL_MediaListOptions = {
+    scoreFormat?: AL_ScoreFormat
+    rowOrder?: string
+    useLegacyLists?: boolean
+    animeList?: AL_MediaListTypeOptions
+    mangaList?: AL_MediaListTypeOptions
+    sharedTheme?: string
+    sharedThemeEnabled?: boolean
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
  *  Media list watching/reading status enum.
  */
 export type AL_MediaListStatus = "CURRENT" |
@@ -1066,6 +1461,40 @@ export type AL_MediaListStatus = "CURRENT" |
     "DROPPED" |
     "PAUSED" |
     "REPEATING"
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  A user's list options for anime or manga lists
+ */
+export type AL_MediaListTypeOptions = {
+    sectionOrder?: Array<string>
+    splitCompletedSectionByFormat?: boolean
+    theme?: string
+    customLists?: Array<string>
+    advancedScoring?: Array<string>
+    advancedScoringEnabled?: boolean
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  The ranking of a media in a particular time span and format compared to other media
+ */
+export type AL_MediaRank = {
+    id: number
+    rank: number
+    type: AL_MediaRankType
+    format: AL_MediaFormat
+    year?: number
+    season?: AL_MediaSeason
+    allTime?: boolean
+    context: string
+}
 
 /**
  * - Filepath: internal/api/anilist/models_gen.go
@@ -1154,9 +1583,146 @@ export type AL_MediaSort = "ID" |
  * - Filename: models_gen.go
  * - Package: anilist
  * @description
+ *  Source type the media was adapted from
+ */
+export type AL_MediaSource = "ORIGINAL" |
+    "MANGA" |
+    "LIGHT_NOVEL" |
+    "VISUAL_NOVEL" |
+    "VIDEO_GAME" |
+    "OTHER" |
+    "NOVEL" |
+    "DOUJINSHI" |
+    "ANIME" |
+    "WEB_NOVEL" |
+    "LIVE_ACTION" |
+    "GAME" |
+    "COMIC" |
+    "MULTIMEDIA_PROJECT" |
+    "PICTURE_BOOK"
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  A media's statistics
+ */
+export type AL_MediaStats = {
+    scoreDistribution?: Array<AL_ScoreDistribution>
+    statusDistribution?: Array<AL_StatusDistribution>
+    airingProgression?: Array<AL_AiringProgression>
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
  *  The current releasing status of the media
  */
 export type AL_MediaStatus = "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CANCELLED" | "HIATUS"
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Data and links to legal streaming episodes on external sites
+ */
+export type AL_MediaStreamingEpisode = {
+    title?: string
+    thumbnail?: string
+    url?: string
+    site?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  A tag that describes a theme or element of the media
+ */
+export type AL_MediaTag = {
+    id: number
+    name: string
+    description?: string
+    category?: string
+    rank?: number
+    isGeneralSpoiler?: boolean
+    isMediaSpoiler?: boolean
+    isAdult?: boolean
+    userId?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  The official titles of the media in various languages
+ */
+export type AL_MediaTitle = {
+    romaji?: string
+    english?: string
+    native?: string
+    userPreferred?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Media trailer or advertisement
+ */
+export type AL_MediaTrailer = {
+    id?: string
+    site?: string
+    thumbnail?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Daily media statistics
+ */
+export type AL_MediaTrend = {
+    mediaId: number
+    date: number
+    trending: number
+    averageScore?: number
+    popularity?: number
+    inProgress?: number
+    releasing: boolean
+    episode?: number
+    media?: AL_Media
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_MediaTrendConnection = {
+    edges?: Array<AL_MediaTrendEdge>
+    nodes?: Array<AL_MediaTrend>
+    pageInfo?: AL_PageInfo
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Media trend connection edge
+ */
+export type AL_MediaTrendEdge = {
+    node?: AL_MediaTrend
+}
 
 /**
  * - Filepath: internal/api/anilist/models_gen.go
@@ -1168,6 +1734,338 @@ export type AL_MediaStatus = "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CA
 export type AL_MediaType = "ANIME" | "MANGA"
 
 /**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Mod role enums
+ */
+export type AL_ModRole = "ADMIN" |
+    "LEAD_DEVELOPER" |
+    "DEVELOPER" |
+    "LEAD_COMMUNITY" |
+    "COMMUNITY" |
+    "DISCORD_COMMUNITY" |
+    "LEAD_ANIME_DATA" |
+    "ANIME_DATA" |
+    "LEAD_MANGA_DATA" |
+    "MANGA_DATA" |
+    "LEAD_SOCIAL_MEDIA" |
+    "SOCIAL_MEDIA" |
+    "RETIRED" |
+    "CHARACTER_DATA" |
+    "STAFF_DATA"
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Notification option
+ */
+export type AL_NotificationOption = {
+    type?: AL_NotificationType
+    enabled?: boolean
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Notification type enum
+ */
+export type AL_NotificationType = "ACTIVITY_MESSAGE" |
+    "ACTIVITY_REPLY" |
+    "FOLLOWING" |
+    "ACTIVITY_MENTION" |
+    "THREAD_COMMENT_MENTION" |
+    "THREAD_SUBSCRIBED" |
+    "THREAD_COMMENT_REPLY" |
+    "AIRING" |
+    "ACTIVITY_LIKE" |
+    "ACTIVITY_REPLY_LIKE" |
+    "THREAD_LIKE" |
+    "THREAD_COMMENT_LIKE" |
+    "ACTIVITY_REPLY_SUBSCRIBED" |
+    "RELATED_MEDIA_ADDITION" |
+    "MEDIA_DATA_CHANGE" |
+    "MEDIA_MERGE" |
+    "MEDIA_DELETION"
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_PageInfo = {
+    total?: number
+    perPage?: number
+    currentPage?: number
+    lastPage?: number
+    hasNextPage?: boolean
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Media recommendation
+ */
+export type AL_Recommendation = {
+    id: number
+    rating?: number
+    userRating?: AL_RecommendationRating
+    media?: AL_Media
+    mediaRecommendation?: AL_Media
+    user?: AL_User
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_RecommendationConnection = {
+    edges?: Array<AL_RecommendationEdge>
+    nodes?: Array<AL_Recommendation>
+    pageInfo?: AL_PageInfo
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Recommendation connection edge
+ */
+export type AL_RecommendationEdge = {
+    node?: AL_Recommendation
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Recommendation rating enums
+ */
+export type AL_RecommendationRating = "NO_RATING" | "RATE_UP" | "RATE_DOWN"
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  A Review that features in an anime or manga
+ */
+export type AL_Review = {
+    id: number
+    userId: number
+    mediaId: number
+    mediaType?: AL_MediaType
+    summary?: string
+    body?: string
+    rating?: number
+    ratingAmount?: number
+    userRating?: AL_ReviewRating
+    score?: number
+    private?: boolean
+    siteUrl?: string
+    createdAt: number
+    updatedAt: number
+    user?: AL_User
+    media?: AL_Media
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_ReviewConnection = {
+    edges?: Array<AL_ReviewEdge>
+    nodes?: Array<AL_Review>
+    pageInfo?: AL_PageInfo
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Review connection edge
+ */
+export type AL_ReviewEdge = {
+    node?: AL_Review
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Review rating enums
+ */
+export type AL_ReviewRating = "NO_VOTE" | "UP_VOTE" | "DOWN_VOTE"
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  A user's list score distribution.
+ */
+export type AL_ScoreDistribution = {
+    score?: number
+    amount?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Media list scoring type
+ */
+export type AL_ScoreFormat = "POINT_100" | "POINT_10_DECIMAL" | "POINT_10" | "POINT_5" | "POINT_3"
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Voice actors or production staff
+ */
+export type AL_Staff = {
+    id: number
+    name?: AL_StaffName
+    language?: AL_StaffLanguage
+    languageV2?: string
+    image?: AL_StaffImage
+    description?: string
+    primaryOccupations?: Array<string>
+    gender?: string
+    dateOfBirth?: AL_FuzzyDate
+    dateOfDeath?: AL_FuzzyDate
+    age?: number
+    yearsActive?: Array<number>
+    homeTown?: string
+    bloodType?: string
+    isFavourite: boolean
+    isFavouriteBlocked: boolean
+    siteUrl?: string
+    staffMedia?: AL_MediaConnection
+    characters?: AL_CharacterConnection
+    characterMedia?: AL_MediaConnection
+    updatedAt?: number
+    staff?: AL_Staff
+    submitter?: AL_User
+    submissionStatus?: number
+    submissionNotes?: string
+    favourites?: number
+    modNotes?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_StaffConnection = {
+    edges?: Array<AL_StaffEdge>
+    nodes?: Array<AL_Staff>
+    pageInfo?: AL_PageInfo
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Staff connection edge
+ */
+export type AL_StaffEdge = {
+    node?: AL_Staff
+    id?: number
+    role?: string
+    favouriteOrder?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_StaffImage = {
+    large?: string
+    medium?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  The primary language of the voice actor
+ */
+export type AL_StaffLanguage = "JAPANESE" |
+    "ENGLISH" |
+    "KOREAN" |
+    "ITALIAN" |
+    "SPANISH" |
+    "PORTUGUESE" |
+    "FRENCH" |
+    "GERMAN" |
+    "HEBREW" |
+    "HUNGARIAN"
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  The names of the staff member
+ */
+export type AL_StaffName = {
+    first?: string
+    middle?: string
+    last?: string
+    full?: string
+    native?: string
+    alternative?: Array<string>
+    userPreferred?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Voice actor role for a character
+ */
+export type AL_StaffRoleType = {
+    voiceActor?: AL_Staff
+    roleNotes?: string
+    dubGroup?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  User's staff statistics
+ */
+export type AL_StaffStats = {
+    staff?: AL_Staff
+    amount?: number
+    meanScore?: number
+    timeWatched?: number
+}
+
+/**
  * - Filepath: internal/api/anilist/stats.go
  * - Filename: stats.go
  * - Package: anilist
@@ -1175,6 +2073,46 @@ export type AL_MediaType = "ANIME" | "MANGA"
 export type AL_Stats = {
     animeStats?: AL_AnimeStats
     mangaStats?: AL_MangaStats
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  The distribution of the watching/reading status of media or a user's list
+ */
+export type AL_StatusDistribution = {
+    status?: AL_MediaListStatus
+    amount?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Animation or production company
+ */
+export type AL_Studio = {
+    id: number
+    name: string
+    isAnimationStudio: boolean
+    media?: AL_MediaConnection
+    siteUrl?: string
+    isFavourite: boolean
+    favourites?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_StudioConnection = {
+    edges?: Array<AL_StudioEdge>
+    nodes?: Array<AL_Studio>
+    pageInfo?: AL_PageInfo
 }
 
 /**
@@ -1208,6 +2146,134 @@ export type AL_StudioDetails_Studio_Media = {
 }
 
 /**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  Studio connection edge
+ */
+export type AL_StudioEdge = {
+    node?: AL_Studio
+    id?: number
+    isMain: boolean
+    favouriteOrder?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  User's studio statistics
+ */
+export type AL_StudioStats = {
+    studio?: AL_Studio
+    amount?: number
+    meanScore?: number
+    timeWatched?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  User's tag statistics
+ */
+export type AL_TagStats = {
+    tag?: AL_MediaTag
+    amount?: number
+    meanScore?: number
+    timeWatched?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  A user
+ */
+export type AL_User = {
+    id: number
+    name: string
+    about?: string
+    avatar?: AL_UserAvatar
+    bannerImage?: string
+    isFollowing?: boolean
+    isFollower?: boolean
+    isBlocked?: boolean
+    bans?: string
+    options?: AL_UserOptions
+    mediaListOptions?: AL_MediaListOptions
+    favourites?: AL_Favourites
+    statistics?: AL_UserStatisticTypes
+    unreadNotificationCount?: number
+    siteUrl?: string
+    donatorTier?: number
+    donatorBadge?: string
+    moderatorRoles?: Array<AL_ModRole>
+    createdAt?: number
+    updatedAt?: number
+    stats?: AL_UserStats
+    moderatorStatus?: string
+    previousNames?: Array<AL_UserPreviousName>
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  A user's activity history stats.
+ */
+export type AL_UserActivityHistory = {
+    date?: number
+    amount?: number
+    level?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  A user's avatars
+ */
+export type AL_UserAvatar = {
+    large?: string
+    medium?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserCountryStatistic = {
+    count: number
+    meanScore: number
+    minutesWatched: number
+    chaptersRead: number
+    mediaIds?: Array<number>
+    country?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserFormatStatistic = {
+    count: number
+    meanScore: number
+    minutesWatched: number
+    chaptersRead: number
+    mediaIds?: Array<number>
+    format?: AL_MediaFormat
+}
+
+/**
  * - Filepath: internal/api/anilist/client_gen.go
  * - Filename: client_gen.go
  * - Package: anilist
@@ -1219,6 +2285,20 @@ export type AL_UserFormatStats = {
     minutesWatched: number
     mediaIds?: Array<number>
     chaptersRead: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserGenreStatistic = {
+    count: number
+    meanScore: number
+    minutesWatched: number
+    chaptersRead: number
+    mediaIds?: Array<number>
+    genre?: string
 }
 
 /**
@@ -1236,6 +2316,67 @@ export type AL_UserGenreStats = {
 }
 
 /**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserLengthStatistic = {
+    count: number
+    meanScore: number
+    minutesWatched: number
+    chaptersRead: number
+    mediaIds?: Array<number>
+    length?: string
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  A user's general options
+ */
+export type AL_UserOptions = {
+    titleLanguage?: AL_UserTitleLanguage
+    displayAdultContent?: boolean
+    airingNotifications?: boolean
+    profileColor?: string
+    notificationOptions?: Array<AL_NotificationOption>
+    timezone?: string
+    activityMergeTime?: number
+    staffNameLanguage?: AL_UserStaffNameLanguage
+    restrictMessagesToFollowing?: boolean
+    disabledListActivity?: Array<AL_ListActivityOption>
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  A user's previous name
+ */
+export type AL_UserPreviousName = {
+    name?: string
+    createdAt?: number
+    updatedAt?: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserReleaseYearStatistic = {
+    count: number
+    meanScore: number
+    minutesWatched: number
+    chaptersRead: number
+    mediaIds?: Array<number>
+    releaseYear?: number
+}
+
+/**
  * - Filepath: internal/api/anilist/client_gen.go
  * - Filename: client_gen.go
  * - Package: anilist
@@ -1247,6 +2388,20 @@ export type AL_UserReleaseYearStats = {
     minutesWatched: number
     mediaIds?: Array<number>
     chaptersRead: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserScoreStatistic = {
+    count: number
+    meanScore: number
+    minutesWatched: number
+    chaptersRead: number
+    mediaIds?: Array<number>
+    score?: number
 }
 
 /**
@@ -1264,6 +2419,43 @@ export type AL_UserScoreStats = {
 }
 
 /**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  The language the user wants to see staff and character names in
+ */
+export type AL_UserStaffNameLanguage = "ROMAJI_WESTERN" | "ROMAJI" | "NATIVE"
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserStaffStatistic = {
+    count: number
+    meanScore: number
+    minutesWatched: number
+    chaptersRead: number
+    mediaIds?: Array<number>
+    staff?: AL_Staff
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserStartYearStatistic = {
+    count: number
+    meanScore: number
+    minutesWatched: number
+    chaptersRead: number
+    mediaIds?: Array<number>
+    startYear?: number
+}
+
+/**
  * - Filepath: internal/api/anilist/client_gen.go
  * - Filename: client_gen.go
  * - Package: anilist
@@ -1278,6 +2470,84 @@ export type AL_UserStartYearStats = {
 }
 
 /**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserStatisticTypes = {
+    anime?: AL_UserStatistics
+    manga?: AL_UserStatistics
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserStatistics = {
+    count: number
+    meanScore: number
+    standardDeviation: number
+    minutesWatched: number
+    episodesWatched: number
+    chaptersRead: number
+    volumesRead: number
+    formats?: Array<AL_UserFormatStatistic>
+    statuses?: Array<AL_UserStatusStatistic>
+    scores?: Array<AL_UserScoreStatistic>
+    lengths?: Array<AL_UserLengthStatistic>
+    releaseYears?: Array<AL_UserReleaseYearStatistic>
+    startYears?: Array<AL_UserStartYearStatistic>
+    genres?: Array<AL_UserGenreStatistic>
+    tags?: Array<AL_UserTagStatistic>
+    countries?: Array<AL_UserCountryStatistic>
+    voiceActors?: Array<AL_UserVoiceActorStatistic>
+    staff?: Array<AL_UserStaffStatistic>
+    studios?: Array<AL_UserStudioStatistic>
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  A user's statistics
+ */
+export type AL_UserStats = {
+    watchedTime?: number
+    chaptersRead?: number
+    activityHistory?: Array<AL_UserActivityHistory>
+    animeStatusDistribution?: Array<AL_StatusDistribution>
+    mangaStatusDistribution?: Array<AL_StatusDistribution>
+    animeScoreDistribution?: Array<AL_ScoreDistribution>
+    mangaScoreDistribution?: Array<AL_ScoreDistribution>
+    animeListScores?: AL_ListScoreStats
+    mangaListScores?: AL_ListScoreStats
+    favouredGenresOverview?: Array<AL_GenreStats>
+    favouredGenres?: Array<AL_GenreStats>
+    favouredTags?: Array<AL_TagStats>
+    favouredActors?: Array<AL_StaffStats>
+    favouredStaff?: Array<AL_StaffStats>
+    favouredStudios?: Array<AL_StudioStats>
+    favouredYears?: Array<AL_YearStats>
+    favouredFormats?: Array<AL_FormatStats>
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserStatusStatistic = {
+    count: number
+    meanScore: number
+    minutesWatched: number
+    chaptersRead: number
+    mediaIds?: Array<number>
+    status?: AL_MediaListStatus
+}
+
+/**
  * - Filepath: internal/api/anilist/client_gen.go
  * - Filename: client_gen.go
  * - Package: anilist
@@ -1289,6 +2559,20 @@ export type AL_UserStatusStats = {
     minutesWatched: number
     mediaIds?: Array<number>
     chaptersRead: number
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserStudioStatistic = {
+    count: number
+    meanScore: number
+    minutesWatched: number
+    chaptersRead: number
+    mediaIds?: Array<number>
+    studio?: AL_Studio
 }
 
 /**
@@ -1314,6 +2598,62 @@ export type AL_UserStudioStats_Studio = {
     id: number
     name: string
     isAnimationStudio: boolean
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserTagStatistic = {
+    count: number
+    meanScore: number
+    minutesWatched: number
+    chaptersRead: number
+    mediaIds?: Array<number>
+    tag?: AL_MediaTag
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  The language the user wants to see media titles in
+ */
+export type AL_UserTitleLanguage = "ROMAJI" |
+    "ENGLISH" |
+    "NATIVE" |
+    "ROMAJI_STYLISED" |
+    "ENGLISH_STYLISED" |
+    "NATIVE_STYLISED"
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ */
+export type AL_UserVoiceActorStatistic = {
+    count: number
+    meanScore: number
+    minutesWatched: number
+    chaptersRead: number
+    mediaIds?: Array<number>
+    voiceActor?: AL_Staff
+    characterIds?: Array<number>
+}
+
+/**
+ * - Filepath: internal/api/anilist/models_gen.go
+ * - Filename: models_gen.go
+ * - Package: anilist
+ * @description
+ *  User's year statistics
+ */
+export type AL_YearStats = {
+    year?: number
+    amount?: number
+    meanScore?: number
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1501,10 +2841,6 @@ export type Anime_EpisodeMetadata = {
     summary?: string
     overview?: string
     isFiller?: boolean
-    /**
-     * Indicates if the episode has a real image
-     */
-    hasImage?: boolean
 }
 
 /**
@@ -1715,6 +3051,10 @@ export type ChapterDownloader_DownloadID = {
     mediaId: number
     chapterId: string
     chapterNumber: string
+    /**
+     * Optional field for series-based directory naming
+     */
+    mangaTitle?: string
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2952,10 +4292,6 @@ export type Metadata_EpisodeMetadata = {
     seasonNumber: number
     absoluteEpisodeNumber: number
     anidbEid: number
-    /**
-     * Indicates if the episode has a real image
-     */
-    hasImage: boolean
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3244,6 +4580,10 @@ export type Models_ChapterDownloadQueueItem = {
     chapterId: string
     chapterNumber: string
     /**
+     * For series-based directory structure
+     */
+    mangaTitle: string
+    /**
      * Contains map of page index to page details
      */
     pageData?: Array<string>
@@ -3531,6 +4871,7 @@ export type Models_TorrentSettings = {
     qbittorrentUsername: string
     qbittorrentPassword: string
     qbittorrentTags: string
+    qbittorrentDownloadsDir: string
     transmissionPath: string
     transmissionHost: string
     transmissionPort: number
