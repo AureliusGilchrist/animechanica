@@ -69,6 +69,8 @@ func (q *Queue) Add(id DownloadID, pages []*hibikemanga.ChapterPage, runNext boo
 		MediaID:       id.MediaId,
 		ChapterNumber: id.ChapterNumber,
 		ChapterID:     id.ChapterId,
+		SeriesTitle:   id.SeriesTitle,
+		ChapterTitle:  id.ChapterTitle,
 		PageData:      marshalled,
 		Status:        string(QueueStatusNotStarted),
 	})
@@ -177,6 +179,8 @@ func (q *Queue) runNext() {
 		MediaId:       next.MediaID,
 		ChapterId:     next.ChapterID,
 		ChapterNumber: next.ChapterNumber,
+		SeriesTitle:   next.SeriesTitle,
+		ChapterTitle:  next.ChapterTitle,
 	}
 
 	q.logger.Debug().Msgf("chapter downloader: Preparing next item in queue: %s", id.ChapterId)

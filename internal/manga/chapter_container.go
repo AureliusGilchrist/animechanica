@@ -382,20 +382,40 @@ func (r *Repository) GetMangaLatestChapterNumbersMap() (ret map[int][]MangaLates
 			continue
 		}
 
+		// Check if container is nil or has no chapters
+		if container == nil || container.Chapters == nil || len(container.Chapters) == 0 {
+			continue
+		}
+
 		// Create groups
 		groupByScanlator := lo.GroupBy(container.Chapters, func(c *hibikemanga.ChapterDetails) string {
 			return c.Scanlator
 		})
 
 		for scanlator, chapters := range groupByScanlator {
+			// Skip if no chapters for this scanlator
+			if len(chapters) == 0 {
+				continue
+			}
+
 			groupByLanguage := lo.GroupBy(chapters, func(c *hibikemanga.ChapterDetails) string {
 				return c.Language
 			})
 
 			for language, chapters := range groupByLanguage {
+				// Skip if no chapters for this language
+				if len(chapters) == 0 {
+					continue
+				}
+
 				lastChapter := slices.MaxFunc(chapters, func(a *hibikemanga.ChapterDetails, b *hibikemanga.ChapterDetails) int {
 					return cmp.Compare(a.Index, b.Index)
 				})
+
+				// Check if lastChapter is nil or has empty Chapter field
+				if lastChapter == nil || lastChapter.Chapter == "" {
+					continue
+				}
 
 				chapterNumFloat, _ := strconv.ParseFloat(lastChapter.Chapter, 32)
 				chapterCount := int(math.Floor(chapterNumFloat))

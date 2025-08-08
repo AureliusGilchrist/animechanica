@@ -2826,6 +2826,21 @@ export type Manga_ProviderDownloadMapChapterInfo = {
     chapterNumber: string
 }
 
+/**
+ * - Filepath: internal/manga/en_masse_downloader.go
+ * - Filename: en_masse_downloader.go
+ * - Package: manga
+ */
+export type Manga_EnMasseDownloaderStatus = {
+    isRunning: boolean
+    totalSeries: number
+    processedSeries: number
+    currentSeries: string
+    startTime: string
+    progress: number
+    estimatedTimeRemaining: string
+}
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Mediaplayer
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

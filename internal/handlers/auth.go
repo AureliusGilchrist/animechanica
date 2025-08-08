@@ -3,11 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
-	"seanime/internal/database/models"
-	"seanime/internal/platforms/anilist_platform"
-	"seanime/internal/platforms/simulated_platform"
-	"seanime/internal/util"
-	"time"
+	"seanime/internal/api/anilist"
 
 	"github.com/goccy/go-json"
 	"github.com/labstack/echo/v4"
@@ -15,10 +11,9 @@ import (
 
 // HandleLogin
 //
-//	@summary logs in the user by saving the JWT token in the database.
+//	@summary logs in the user by saving the JWT token for the current session.
 //	@desc This is called when the JWT token is obtained from AniList after logging in with redirection on the client.
-//	@desc It also fetches the Viewer data from AniList and saves it in the database.
-//	@desc It creates a new handlers.Status and refreshes App modules.
+//	@desc It creates a session-specific authentication that doesn't affect other users.
 //	@route /api/v1/auth/login [POST]
 //	@returns handlers.Status
 func (h *Handler) HandleLogin(c echo.Context) error {
@@ -33,13 +28,16 @@ func (h *Handler) HandleLogin(c echo.Context) error {
 		return h.RespondWithError(c, err)
 	}
 
-	// Set a new AniList client by passing to JWT token
-	h.App.UpdateAnilistClientToken(b.Token)
+	// Get session ID from cookie
+	sessionID := c.Get("Seanime-Client-Id").(string)
+
+	// Create a temporary AniList client to verify the token
+	tempClient := anilist.NewAnilistClient(b.Token)
 
 	// Get viewer data from AniList
-	getViewer, err := h.App.AnilistClient.GetViewer(context.Background())
+	getViewer, err := tempClient.GetViewer(context.Background())
 	if err != nil {
-		h.App.Logger.Error().Msg("Could not authenticate to AniList")
+		h.App.Logger.Error().Str("sessionId", sessionID).Msg("Could not authenticate to AniList")
 		return h.RespondWithError(c, err)
 	}
 
@@ -50,43 +48,30 @@ func (h *Handler) HandleLogin(c echo.Context) error {
 	// Marshal viewer data
 	bytes, err := json.Marshal(getViewer.Viewer)
 	if err != nil {
-		h.App.Logger.Err(err).Msg("scan: could not save local files")
+		h.App.Logger.Err(err).Str("sessionId", sessionID).Msg("Could not marshal viewer data")
 	}
 
-	// Save account data in database
-	_, err = h.App.Database.UpsertAccount(&models.Account{
-		BaseModel: models.BaseModel{
-			ID:        1,
-			UpdatedAt: time.Now(),
-		},
-		Username: getViewer.Viewer.Name,
-		Token:    b.Token,
-		Viewer:   bytes,
-	})
-
-	if err != nil {
-		return h.RespondWithError(c, err)
+	// Create or update session with AniList token
+	if _, exists := h.App.SessionManager.GetSession(sessionID); exists {
+		// Update existing session
+		err = h.App.SessionManager.UpdateSession(sessionID, b.Token, getViewer.Viewer.Name, bytes)
+		if err != nil {
+			h.App.Logger.Error().Err(err).Str("sessionId", sessionID).Msg("Failed to update session")
+			return h.RespondWithError(c, err)
+		}
+	} else {
+		// Create new session
+		_, err = h.App.SessionManager.CreateSession(sessionID, b.Token, getViewer.Viewer.Name, bytes)
+		if err != nil {
+			h.App.Logger.Error().Err(err).Str("sessionId", sessionID).Msg("Failed to create session")
+			return h.RespondWithError(c, err)
+		}
 	}
 
-	h.App.Logger.Info().Msg("app: Authenticated to AniList")
+	h.App.Logger.Info().Str("sessionId", sessionID).Str("username", getViewer.Viewer.Name).Msg("User authenticated to AniList")
 
-	// Update the platform
-	anilistPlatform := anilist_platform.NewAnilistPlatform(h.App.AnilistClient, h.App.Logger)
-	h.App.UpdatePlatform(anilistPlatform)
-
-	// Create a new status
+	// Create a new status for this session
 	status := h.NewStatus(c)
-
-	h.App.InitOrRefreshAnilistData()
-
-	h.App.InitOrRefreshModules()
-
-	go func() {
-		defer util.HandlePanicThen(func() {})
-		h.App.InitOrRefreshTorrentstreamSettings()
-		h.App.InitOrRefreshMediastreamSettings()
-		h.App.InitOrRefreshDebridSettings()
-	}()
 
 	// Return new status
 	return h.RespondWithData(c, status)
@@ -95,44 +80,23 @@ func (h *Handler) HandleLogin(c echo.Context) error {
 
 // HandleLogout
 //
-//	@summary logs out the user by removing JWT token from the database.
-//	@desc It removes JWT token and Viewer data from the database.
-//	@desc It creates a new handlers.Status and refreshes App modules.
+//	@summary logs out the current user session by removing their JWT token.
+//	@desc This removes the JWT token and Viewer data for the current session only.
+//	@desc Other users' sessions are not affected.
 //	@route /api/v1/auth/logout [POST]
 //	@returns handlers.Status
 func (h *Handler) HandleLogout(c echo.Context) error {
 
-	// Update the anilist client
-	h.App.UpdateAnilistClientToken("")
+	// Get session ID from cookie
+	sessionID := c.Get("Seanime-Client-Id").(string)
 
-	// Update the platform
-	simulatedPlatform, err := simulated_platform.NewSimulatedPlatform(h.App.LocalManager, h.App.AnilistClient, h.App.Logger)
-	if err != nil {
-		return h.RespondWithError(c, err)
-	}
-	h.App.UpdatePlatform(simulatedPlatform)
+	// Delete the session
+	h.App.SessionManager.DeleteSession(sessionID)
 
-	_, err = h.App.Database.UpsertAccount(&models.Account{
-		BaseModel: models.BaseModel{
-			ID:        1,
-			UpdatedAt: time.Now(),
-		},
-		Username: "",
-		Token:    "",
-		Viewer:   nil,
-	})
+	h.App.Logger.Info().Str("sessionId", sessionID).Msg("User logged out of AniList")
 
-	if err != nil {
-		return h.RespondWithError(c, err)
-	}
-
-	h.App.Logger.Info().Msg("Logged out of AniList")
-
+	// Create a new status for this session
 	status := h.NewStatus(c)
-
-	h.App.InitOrRefreshModules()
-
-	h.App.InitOrRefreshAnilistData()
 
 	return h.RespondWithData(c, status)
 }

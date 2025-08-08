@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"fmt"
+
 	// "image/jpeg"
 	"io"
 	"os"
@@ -542,15 +543,41 @@ func (p *Local) FindChapterPages(id string) (ret []*hibikemanga.ChapterPage, err
 }
 
 func (p *Local) ReadPage(path string) (ret io.ReadCloser, err error) {
-	// e.g. path = "/series/chapter_1.cbz/image_1.jpg"
+	// e.g. path = "/series/chapter_1.cbz/image_1.jpg" or "Gachiakuta/1 - Unknown/01.jpeg"
+	p.logger.Debug().Str("path", path).Str("dir", p.dir).Msg("local provider: ReadPage called")
 
-	// If the pages are already in memory, return them
+	// If the pages are already in memory, return them (for compressed files)
 	if len(p.currentPages) > 0 {
 		page, ok := p.currentPages[strings.ToLower(filepath.Base(path))]
 		if ok {
+			p.logger.Debug().Str("path", path).Msg("local provider: Found page in memory")
 			return io.NopCloser(bytes.NewReader(page.buf)), nil // Return the page
 		}
 	}
 
-	return nil, fmt.Errorf("page not found: %s", path)
+	// For downloaded manga: try to read the file directly from disk
+	// Try multiple possible paths to handle both local manga and downloaded manga
+	possiblePaths := []string{
+		filepath.Join(p.dir, path),                    // Direct path: /dir/Gachiakuta/1 - Unknown/01.jpeg
+		filepath.Join(filepath.Dir(p.dir), path),      // Parent directory: /parent/Gachiakuta/1 - Unknown/01.jpeg (for when p.dir ends with /local)
+		filepath.Join(p.dir, "local", path),           // Local subdirectory: /dir/local/Gachiakuta/1 - Unknown/01.jpeg
+	}
+	
+	for _, fullPath := range possiblePaths {
+		p.logger.Debug().Str("fullPath", fullPath).Msg("local provider: Trying to read file from disk")
+		if _, err := os.Stat(fullPath); err == nil {
+			file, err := os.Open(fullPath)
+			if err != nil {
+				p.logger.Error().Err(err).Str("fullPath", fullPath).Msg("local provider: Failed to open file")
+				continue // Try next path
+			}
+			p.logger.Debug().Str("fullPath", fullPath).Msg("local provider: Successfully opened file")
+			return file, nil
+		} else {
+			p.logger.Debug().Err(err).Str("fullPath", fullPath).Msg("local provider: File does not exist at this path")
+		}
+	}
+
+	p.logger.Error().Str("path", path).Msg("local provider: Page not found in any possible location")
+	return nil, fmt.Errorf("page not found: %s (tried multiple paths)", path)
 }

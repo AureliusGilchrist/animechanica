@@ -12,11 +12,11 @@ import { Tooltip } from "@/components/ui/tooltip"
 import { WSEvents } from "@/lib/server/ws-events"
 import { atom } from "jotai"
 import { useAtom } from "jotai/react"
-import { Inter } from "next/font/google"
 import React, { useState } from "react"
 import { BiDownArrow, BiGroup, BiStop, BiUpArrow } from "react-icons/bi"
 
-const inter = Inter({ subsets: ["latin"] })
+// Use system fonts instead of Google Fonts to avoid network dependency
+const inter = { className: "font-sans" }
 
 const enum TorrentStreamEvents {
     TorrentLoading = "loading",

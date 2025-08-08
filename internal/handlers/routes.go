@@ -340,6 +340,8 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Manga.POST("/update-progress", h.HandleUpdateMangaProgress)
 
 	v1Manga.GET("/downloaded-chapters/:id", h.HandleGetMangaEntryDownloadedChapters)
+	v1Manga.GET("/downloaded-series", h.HandleGetDownloadedMangaSeries)
+	v1Manga.POST("/refresh-downloaded-cache", h.HandleRefreshDownloadedMangaCache)
 	v1Manga.GET("/downloads", h.HandleGetMangaDownloadsList)
 	v1Manga.POST("/download-chapters", h.HandleDownloadMangaChapters)
 	v1Manga.POST("/download-data", h.HandleGetMangaDownloadData)
@@ -349,6 +351,11 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Manga.POST("/download-queue/stop", h.HandleStopMangaDownloadQueue)
 	v1Manga.DELETE("/download-queue", h.HandleClearAllChapterDownloadQueue)
 	v1Manga.POST("/download-queue/reset-errored", h.HandleResetErroredChapterDownloadQueue)
+
+	// En Masse Downloader routes
+	v1Manga.POST("/en-masse-downloader/start", h.HandleStartEnMasseDownloader)
+	v1Manga.POST("/en-masse-downloader/stop", h.HandleStopEnMasseDownloader)
+	v1Manga.GET("/en-masse-downloader/status", h.HandleGetEnMasseDownloaderStatus)
 
 	v1Manga.POST("/search", h.HandleMangaManualSearch)
 	v1Manga.POST("/manual-mapping", h.HandleMangaManualMapping)

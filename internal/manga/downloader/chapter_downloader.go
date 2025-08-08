@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"seanime/internal/database/db"
 	"seanime/internal/events"
 	hibikemanga "seanime/internal/extension/hibike/manga"
@@ -25,12 +26,13 @@ import (
 	_ "golang.org/x/image/tiff" // Register Tiff format
 )
 
-// 📁 cache/manga
-// └── 📁 {provider}_{mediaId}_{chapterId}_{chapterNumber}      <- Downloader generates
-//     ├── 📄 registry.json						                <- Contains Registry
-//     ├── 📄 1.jpg
-//     ├── 📄 2.jpg
-//     └── 📄 ...
+// 📁 /aeternae/library/manga/seanime/
+// └── 📁 {SERIES_TITLE}/                                    <- Sanitized manga title
+//     └── 📁 {CHAPTER_NUMBER} - {CHAPTER_TITLE}/         <- Chapter folder
+//         ├── 📄 registry.json						        <- Contains Registry with metadata
+//         ├── 📄 1.jpg
+//         ├── 📄 2.jpg
+//         └── 📄 ...
 //
 
 type (
@@ -57,12 +59,18 @@ type (
 		MediaId       int    `json:"mediaId"`
 		ChapterId     string `json:"chapterId"`
 		ChapterNumber string `json:"chapterNumber"`
+		SeriesTitle   string `json:"seriesTitle"`
+		ChapterTitle  string `json:"chapterTitle"`
 	}
 
 	//+-------------------------------------------------------------------------------------------------------------------+
 
 	// Registry stored in 📄 registry.json for each chapter download.
-	Registry map[int]PageInfo
+	// Now includes both page information and download metadata
+	Registry struct {
+		DownloadMetadata DownloadID       `json:"download_metadata"`
+		Pages            map[int]PageInfo `json:"pages"`
+	}
 
 	PageInfo struct {
 		Index       int    `json:"index"`
@@ -225,7 +233,10 @@ func (cd *Downloader) downloadChapterImages(queueInfo *QueueInfo) (err error) {
 
 	cd.logger.Debug().Msgf("chapter downloader: Downloading chapter %s images to %s", queueInfo.ChapterId, destination)
 
-	registry := make(Registry)
+	registry := Registry{
+		DownloadMetadata: queueInfo.DownloadID,
+		Pages:            make(map[int]PageInfo),
+	}
 
 	// calculateBatchSize calculates the batch size based on the number of URLs.
 	calculateBatchSize := func(numURLs int) int {
@@ -323,7 +334,7 @@ func (cd *Downloader) downloadPage(page *hibikemanga.ChapterPage, destination st
 
 	// Update registry
 	cd.downloadMu.Lock()
-	(*registry)[page.Index] = PageInfo{
+	registry.Pages[page.Index] = PageInfo{
 		Index:       page.Index,
 		Width:       config.Width,
 		Height:      config.Height,
@@ -348,7 +359,7 @@ func (r *Registry) save(queueInfo *QueueInfo, destination string, logger *zerolo
 	// Verify all images have been downloaded
 	allDownloaded := true
 	for _, page := range queueInfo.Pages {
-		if _, ok := (*r)[page.Index]; !ok {
+		if _, ok := r.Pages[page.Index]; !ok {
 			allDownloaded = false
 			break
 		}
@@ -380,11 +391,63 @@ func (r *Registry) save(queueInfo *QueueInfo, destination string, logger *zerolo
 }
 
 func (cd *Downloader) getChapterDownloadDir(downloadId DownloadID) string {
-	return filepath.Join(cd.downloadDir, FormatChapterDirName(downloadId.Provider, downloadId.MediaId, downloadId.ChapterId, downloadId.ChapterNumber))
+	// Use the new {SERIES}/{CHAPTERNAME} format
+	cd.logger.Debug().Str("seriesTitle", downloadId.SeriesTitle).Str("chapterNumber", downloadId.ChapterNumber).Str("chapterTitle", downloadId.ChapterTitle).Msg("chapter downloader: Creating download directory path")
+	dirPath := filepath.Join(cd.downloadDir, FormatNewChapterDirName(downloadId.SeriesTitle, downloadId.ChapterNumber, downloadId.ChapterTitle))
+	cd.logger.Debug().Str("fullPath", dirPath).Msg("chapter downloader: Full download directory path")
+	return dirPath
 }
 
+// FormatChapterDirName - Legacy function for backward compatibility
 func FormatChapterDirName(provider string, mediaId int, chapterId string, chapterNumber string) string {
 	return fmt.Sprintf("%s_%d_%s_%s", provider, mediaId, EscapeChapterID(chapterId), chapterNumber)
+}
+
+// SanitizeForFilesystem sanitizes a string to be safe for filesystem use
+func SanitizeForFilesystem(name string) string {
+	if name == "" {
+		return "Unknown"
+	}
+
+	// Remove or replace problematic characters
+	re := regexp.MustCompile(`[<>:"/\\|?*]`)
+	name = re.ReplaceAllString(name, "")
+
+	// Replace multiple spaces with single space
+	re = regexp.MustCompile(`\s+`)
+	name = re.ReplaceAllString(name, " ")
+
+	// Trim spaces and dots from the end (Windows doesn't like trailing dots)
+	name = strings.TrimRight(name, ". ")
+
+	// Ensure it's not empty after sanitization
+	if name == "" {
+		return "Unknown"
+	}
+
+	// Limit length to avoid filesystem issues
+	if len(name) > 200 {
+		name = name[:200]
+		name = strings.TrimRight(name, ". ")
+	}
+
+	return name
+}
+
+// FormatNewChapterDirName creates the new directory structure: {SERIES}/{CHAPTERNAME}
+func FormatNewChapterDirName(seriesTitle, chapterNumber, chapterTitle string) string {
+	sanitizedSeries := SanitizeForFilesystem(seriesTitle)
+	sanitizedChapterTitle := SanitizeForFilesystem(chapterTitle)
+
+	// Create chapter folder name: "Chapter 1 - Title" or just "Chapter 1" if no title
+	var chapterFolderName string
+	if sanitizedChapterTitle != "" {
+		chapterFolderName = fmt.Sprintf("%s - %s", chapterNumber, sanitizedChapterTitle)
+	} else {
+		chapterFolderName = chapterNumber
+	}
+
+	return filepath.Join(sanitizedSeries, chapterFolderName)
 }
 
 // ParseChapterDirName parses a chapter directory name and returns the DownloadID.
@@ -409,24 +472,32 @@ func ParseChapterDirName(dirName string) (id DownloadID, ok bool) {
 }
 
 func EscapeChapterID(id string) string {
-	id = strings.ReplaceAll(id, "/", "$SLASH$")
-	id = strings.ReplaceAll(id, "\\", "$BSLASH$")
-	id = strings.ReplaceAll(id, ":", "$COLON$")
-	id = strings.ReplaceAll(id, "*", "$ASTERISK$")
-	id = strings.ReplaceAll(id, "?", "$QUESTION$")
-	id = strings.ReplaceAll(id, "\"", "$QUOTE$")
-	id = strings.ReplaceAll(id, "<", "$LT$")
-	id = strings.ReplaceAll(id, ">", "$GT$")
-	id = strings.ReplaceAll(id, "|", "$PIPE$")
-	id = strings.ReplaceAll(id, ".", "$DOT$")
-	id = strings.ReplaceAll(id, " ", "$SPACE$")
+	// Replace underscores with a placeholder to avoid conflicts with the delimiter
 	id = strings.ReplaceAll(id, "_", "$UNDERSCORE$")
+	// Replace forward slashes with a placeholder
+	id = strings.ReplaceAll(id, "/", "$SLASH$")
+	// Replace backslashes with a placeholder
+	id = strings.ReplaceAll(id, "\\", "$BACKSLASH$")
+	// Replace colons with a placeholder
+	id = strings.ReplaceAll(id, ":", "$COLON$")
+	// Replace asterisks with a placeholder
+	id = strings.ReplaceAll(id, "*", "$ASTERISK$")
+	// Replace question marks with a placeholder
+	id = strings.ReplaceAll(id, "?", "$QUESTION$")
+	// Replace quotes with a placeholder
+	id = strings.ReplaceAll(id, "\"", "$QUOTE$")
+	// Replace less than with a placeholder
+	id = strings.ReplaceAll(id, "<", "$LESS$")
+	// Replace greater than with a placeholder
+	id = strings.ReplaceAll(id, ">", "$GREATER$")
+	// Replace pipe with a placeholder
+	id = strings.ReplaceAll(id, "|", "$PIPE$")
 	return id
 }
 
 func UnescapeChapterID(id string) string {
 	id = strings.ReplaceAll(id, "$SLASH$", "/")
-	id = strings.ReplaceAll(id, "$BSLASH$", "\\")
+	id = strings.ReplaceAll(id, "$BACKSLASH$", "\\")
 	id = strings.ReplaceAll(id, "$COLON$", ":")
 	id = strings.ReplaceAll(id, "$ASTERISK$", "*")
 	id = strings.ReplaceAll(id, "$QUESTION$", "?")

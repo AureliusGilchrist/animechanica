@@ -55,8 +55,17 @@ func (h *Handler) NewStatus(c echo.Context) *Status {
 	var theme *models.Theme
 	//var mal *models.Mal
 
-	// Get the user from the database (if logged in)
-	if dbAcc, _ = h.App.Database.GetAccount(); dbAcc != nil {
+	// Get session ID from cookie
+	sessionID := c.Get("Seanime-Client-Id").(string)
+
+	// Get the user from the session (if logged in)
+	if session, exists := h.App.SessionManager.GetSession(sessionID); exists {
+		// Create a temporary account model from session data
+		dbAcc = &models.Account{
+			Username: session.Username,
+			Token:    session.Token,
+			Viewer:   session.Viewer,
+		}
 		currentUser, _ = user.NewUser(dbAcc)
 		if currentUser != nil {
 			currentUser.Token = "HIDDEN"

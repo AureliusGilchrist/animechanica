@@ -3,13 +3,13 @@ import { TauriManager } from "@/app/(main)/_tauri/tauri-manager"
 import { ClientProviders } from "@/app/client-providers"
 import { __isElectronDesktop__, __isTauriDesktop__ } from "@/types/constants"
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
 import "./globals.css"
 import React from "react"
 
 export const dynamic = "force-static"
 
-const inter = Inter({ subsets: ["latin"] })
+// Use system fonts instead of Google Fonts to avoid network dependency
+const inter = { className: "font-sans" }
 
 export const metadata: Metadata = {
     title: "Seanime",

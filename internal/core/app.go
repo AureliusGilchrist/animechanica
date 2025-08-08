@@ -88,6 +88,7 @@ type (
 		MetadataProvider                metadata.Provider
 		DiscordPresence                 *discordrpc_presence.Presence
 		MangaDownloader                 *manga.Downloader
+		EnMasseDownloader               *manga.EnMasseDownloader
 		ContinuityManager               *continuity.Manager
 		Cleanups                        []func()
 		OnRefreshAnilistCollectionFuncs map[string]func()
@@ -117,7 +118,8 @@ type (
 		ServerReady        bool // Whether the Anilist data from the first request has been fetched
 		isOffline          *bool
 		NakamaManager      *nakama.Manager
-		ServerPasswordHash string // SHA-256 hash of the server password
+		ServerPasswordHash string          // SHA-256 hash of the server password
+		SessionManager     *SessionManager // Session-based authentication manager
 	}
 )
 
@@ -364,6 +366,7 @@ func NewApp(configOpts *ConfigOptions, selfupdater *updater.SelfUpdater) *App {
 		HookManager:                     hookManager,
 		isOffline:                       &isOffline,
 		ServerPasswordHash:              serverPasswordHash,
+		SessionManager:                  NewSessionManager(logger, cfg.Data.AppDataDir),
 	}
 
 	// Run database migrations if version has changed
@@ -433,6 +436,9 @@ func (a *App) AddOnRefreshAnilistCollectionFunc(key string, f func()) {
 }
 
 func (a *App) Cleanup() {
+	if a.SessionManager != nil {
+		a.SessionManager.Stop()
+	}
 	for _, f := range a.Cleanups {
 		f()
 	}

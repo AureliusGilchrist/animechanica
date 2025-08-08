@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"runtime"
 	"seanime/internal/api/anilist"
 	"seanime/internal/continuity"
@@ -181,10 +182,79 @@ func (a *App) initModulesOnce() {
 		WSEventManager: a.WSEventManager,
 		DownloadDir:    a.Config.Manga.DownloadDir,
 		Repository:     a.MangaRepository,
-		IsOffline:      a.IsOffline(),
+		GetMangaTitleFunc: func(mediaId int) string {
+			a.Logger.Debug().Int("mediaId", mediaId).Msg("manga downloader: Attempting to get manga title from collections")
+
+			// Try to get manga title from local manga collection
+			if localCollection := a.LocalManager.GetLocalMangaCollection(); localCollection.IsPresent() {
+				a.Logger.Debug().Msg("manga downloader: Local collection is present, searching for entry")
+				if entry, ok := localCollection.MustGet().GetListEntryFromMangaId(mediaId); ok {
+					if media := entry.GetMedia(); media != nil {
+						title := media.GetTitleSafe()
+						if title != "" && title != "N/A" {
+							a.Logger.Debug().Str("title", title).Msg("manga downloader: Found title in local collection")
+							return title
+						}
+					}
+				} else {
+					a.Logger.Debug().Msg("manga downloader: Media ID not found in local collection")
+				}
+			} else {
+				a.Logger.Debug().Msg("manga downloader: Local collection is not present")
+			}
+
+			// Try simulated collection if local collection doesn't have the entry
+			if simulatedCollection := a.LocalManager.GetSimulatedMangaCollection(); simulatedCollection.IsPresent() {
+				a.Logger.Debug().Msg("manga downloader: Simulated collection is present, searching for entry")
+				if entry, ok := simulatedCollection.MustGet().GetListEntryFromMangaId(mediaId); ok {
+					if media := entry.GetMedia(); media != nil {
+						title := media.GetTitleSafe()
+						if title != "" && title != "N/A" {
+							a.Logger.Debug().Str("title", title).Msg("manga downloader: Found title in simulated collection")
+							return title
+						}
+					}
+				} else {
+					a.Logger.Debug().Msg("manga downloader: Media ID not found in simulated collection")
+				}
+			} else {
+				a.Logger.Debug().Msg("manga downloader: Simulated collection is not present")
+			}
+
+			a.Logger.Debug().Int("mediaId", mediaId).Msg("manga downloader: No title found in collections, trying direct AniList fetch")
+
+			// Fallback: Try to fetch manga details directly from AniList
+			if media, err := a.AnilistPlatform.GetManga(context.Background(), mediaId); err == nil && media != nil {
+				title := media.GetTitleSafe()
+				if title != "" && title != "N/A" {
+					a.Logger.Debug().Str("title", title).Msg("manga downloader: Found title via direct AniList fetch")
+					return title
+				}
+			} else {
+				a.Logger.Debug().Err(err).Msg("manga downloader: Failed to fetch manga from AniList")
+			}
+
+			a.Logger.Debug().Int("mediaId", mediaId).Msg("manga downloader: All fallback methods failed, returning empty string")
+			return "" // Return empty string if all methods fail
+		},
+		IsOffline: a.IsOffline(),
 	})
 
 	a.MangaDownloader.Start()
+
+	// +---------------------+
+	// | En Masse Downloader |
+	// +---------------------+
+
+	a.EnMasseDownloader = manga.NewEnMasseDownloader(&manga.EnMasseDownloaderOptions{
+		Logger:         a.Logger,
+		WSEventManager: a.WSEventManager,
+		Database:       a.Database,
+		Repository:     a.MangaRepository,
+		Downloader:     a.MangaDownloader,
+		AnilistClient:  a.AnilistClient,
+		CataloguePath:  "/aeternae/library/manga/seanime/weebcentral_catalogue.json",
+	})
 
 	// +---------------------+
 	// |    Media Stream     |

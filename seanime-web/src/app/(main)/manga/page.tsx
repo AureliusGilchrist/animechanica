@@ -3,7 +3,7 @@ import { CustomLibraryBanner } from "@/app/(main)/(library)/_containers/custom-l
 import { MediaEntryPageLoadingDisplay } from "@/app/(main)/_features/media/_components/media-entry-page-loading-display"
 import { LibraryHeader } from "@/app/(main)/manga/_components/library-header"
 import { useHandleMangaCollection } from "@/app/(main)/manga/_lib/handle-manga-collection"
-import { MangaLibraryView } from "@/app/(main)/manga/_screens/manga-library-view"
+import { MainLibraryView } from "@/app/(main)/manga/_screens/main-library-view"
 import { cn } from "@/components/ui/core/styling"
 import { ThemeLibraryScreenBannerType, useThemeSettings } from "@/lib/theme/hooks"
 import { __isDesktop__ } from "@/types/constants"
@@ -57,10 +57,10 @@ export default function Page() {
                 </>
             )}
 
-            <MangaLibraryView
-                genres={mangaCollectionGenres}
+            <MainLibraryView
                 collection={mangaCollection}
                 filteredCollection={filteredMangaCollection}
+                genres={mangaCollectionGenres}
                 storedProviders={storedProviders}
                 hasManga={hasManga}
             />

@@ -1207,6 +1207,40 @@ export const API_ENDPOINTS = {
             endpoint: "/api/v1/manga/downloads",
         },
     },
+    MANGA_EN_MASSE_DOWNLOADER: {
+        /**
+         *  @description
+         *  Route starts the En Masse Downloader to process all manga series in the weebcentral catalogue.
+         *  This will start the En Masse Downloader if it's not already running.
+         *  Returns 'true' whether the downloader was started or not.
+         */
+        StartEnMasseDownloader: {
+            key: "MANGA-EN-MASSE-DOWNLOADER-start-en-masse-downloader",
+            methods: ["POST"],
+            endpoint: "/api/v1/manga/en-masse-downloader/start",
+        },
+        /**
+         *  @description
+         *  Route stops the En Masse Downloader.
+         *  This will stop the En Masse Downloader if it's running.
+         *  Returns 'true' whether the downloader was stopped or not.
+         */
+        StopEnMasseDownloader: {
+            key: "MANGA-EN-MASSE-DOWNLOADER-stop-en-masse-downloader",
+            methods: ["POST"],
+            endpoint: "/api/v1/manga/en-masse-downloader/stop",
+        },
+        /**
+         *  @description
+         *  Route returns the status of the En Masse Downloader.
+         *  This returns information about the current state, progress, and statistics of the downloader.
+         */
+        GetEnMasseDownloaderStatus: {
+            key: "MANGA-EN-MASSE-DOWNLOADER-get-en-masse-downloader-status",
+            methods: ["GET"],
+            endpoint: "/api/v1/manga/en-masse-downloader/status",
+        },
+    },
     MANUAL_DUMP: {
         TestDump: {
             key: "MANUAL-DUMP-test-dump",

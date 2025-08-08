@@ -292,7 +292,7 @@ func (r *Repository) getDownloadedMangaPageContainer(
 	pageDimensions := make(map[int]*PageDimension)
 
 	// Get the downloaded pages
-	for pageIndex, pageInfo := range *pageRegistry {
+	for pageIndex, pageInfo := range pageRegistry.Pages {
 		pageList = append(pageList, &hibikemanga.ChapterPage{
 			Index:    pageIndex,
 			URL:      filepath.Join(chapterDir, pageInfo.Filename),
