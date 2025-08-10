@@ -4,12 +4,14 @@ import { useGetEnMasseDownloaderStatus, useStartEnMasseDownloader, useStopEnMass
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // import { cn } from "@/lib/utils" // Removed to fix import issue
 import React from "react"
 import { BiPlay, BiStop } from "react-icons/bi"
 import { toast } from "sonner"
+import { AllAnimeDownloaderScreen } from "../../anime-batch-downloader/_screens/all-anime-downloader-screen"
 
-export function EnMasseDownloader() {
+function MangaEnMasseDownloader() {
     const { data: status, isLoading } = useGetEnMasseDownloaderStatus()
     const startMutation = useStartEnMasseDownloader()
     const stopMutation = useStopEnMasseDownloader()
@@ -58,10 +60,10 @@ export function EnMasseDownloader() {
     }
 
     return (
-        <div className="container mx-auto p-6 space-y-6">
+        <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold">En Masse Downloader</h1>
+                    <h2 className="text-2xl font-bold">Manga En Masse Downloader</h2>
                     <p className="text-muted-foreground">
                         Download all manga series from the weebcentral catalogue
                     </p>
@@ -197,6 +199,49 @@ export function EnMasseDownloader() {
                     </CardContent>
                 </Card>
             </div>
+        </div>
+    )
+}
+
+export function EnMasseDownloader() {
+    const [activeTab, setActiveTab] = React.useState("manga")
+    
+    React.useEffect(() => {
+        // Check URL parameters for tab selection
+        const urlParams = new URLSearchParams(window.location.search)
+        const tabParam = urlParams.get("tab")
+        if (tabParam === "anime") {
+            setActiveTab("anime")
+        }
+    }, [])
+    
+    return (
+        <div className="container mx-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-3xl font-bold">En Masse Downloader</h1>
+                    <p className="text-muted-foreground">
+                        Download all anime and manga series in bulk
+                    </p>
+                </div>
+            </div>
+
+            <Separator />
+
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="manga">Manga Downloader</TabsTrigger>
+                    <TabsTrigger value="anime">Anime Downloader</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="manga" className="mt-6">
+                    <MangaEnMasseDownloader />
+                </TabsContent>
+                
+                <TabsContent value="anime" className="mt-6">
+                    <AllAnimeDownloaderScreen />
+                </TabsContent>
+            </Tabs>
         </div>
     )
 }

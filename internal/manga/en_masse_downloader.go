@@ -1,12 +1,12 @@
 package manga
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io"
 	"os"
+	"path/filepath"
 	"seanime/internal/api/anilist"
 	"seanime/internal/database/db"
 	"seanime/internal/events"
@@ -45,6 +45,7 @@ type (
 		cataloguePath        string
 		delayBetweenChapters time.Duration
 		delayBetweenSeries   time.Duration
+		progressFilePath     string
 	}
 
 	// WeebCentralCatalogueEntry represents a manga series in the weebcentral catalogue
@@ -64,6 +65,15 @@ type (
 		EstimatedTimeRemaining string    `json:"estimatedTimeRemaining"`
 	}
 
+	// EnMasseDownloaderProgress represents the saved progress state
+	EnMasseDownloaderProgress struct {
+		ProcessedSeriesIDs []string  `json:"processedSeriesIds"`
+		TotalSeries        int       `json:"totalSeries"`
+		ProcessedSeries    int       `json:"processedSeries"`
+		StartTime          time.Time `json:"startTime"`
+		LastUpdated        time.Time `json:"lastUpdated"`
+	}
+
 	// EnMasseDownloaderOptions contains options for creating a new EnMasseDownloader
 	EnMasseDownloaderOptions struct {
 		Logger         *zerolog.Logger
@@ -78,6 +88,10 @@ type (
 
 // NewEnMasseDownloader creates a new EnMasseDownloader instance
 func NewEnMasseDownloader(opts *EnMasseDownloaderOptions) *EnMasseDownloader {
+	// Create progress file path in the same directory as the catalogue
+	catalogueDir := filepath.Dir(opts.CataloguePath)
+	progressFilePath := filepath.Join(catalogueDir, "en_masse_downloader_progress.json")
+
 	return &EnMasseDownloader{
 		logger:               opts.Logger,
 		wsEventManager:       opts.WSEventManager,
@@ -86,10 +100,85 @@ func NewEnMasseDownloader(opts *EnMasseDownloaderOptions) *EnMasseDownloader {
 		anilistClient:        opts.AnilistClient,
 		downloader:           opts.Downloader,
 		cataloguePath:        opts.CataloguePath,
+		progressFilePath:     progressFilePath,
 		delayBetweenChapters: 2 * time.Second,  // Increased from 100ms to 2s to reduce rate limiting
 		delayBetweenSeries:   10 * time.Second, // Increased from 3s to 10s to reduce rate limiting
 		stopCh:               make(chan struct{}),
 	}
+}
+
+// saveProgress saves the current progress to a file
+func (emd *EnMasseDownloader) saveProgress(processedSeriesIDs []string) error {
+	progress := &EnMasseDownloaderProgress{
+		ProcessedSeriesIDs: processedSeriesIDs,
+		TotalSeries:        emd.totalSeries,
+		ProcessedSeries:    emd.processedSeries,
+		StartTime:          emd.startTime,
+		LastUpdated:        time.Now(),
+	}
+
+	data, err := json.MarshalIndent(progress, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal progress: %w", err)
+	}
+
+	if err := os.WriteFile(emd.progressFilePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write progress file: %w", err)
+	}
+
+	emd.logger.Debug().Str("progressFile", emd.progressFilePath).Int("processedSeries", emd.processedSeries).Msg("en_masse_downloader: Saved progress")
+	return nil
+}
+
+// loadProgress loads the progress from a file
+func (emd *EnMasseDownloader) loadProgress() (*EnMasseDownloaderProgress, error) {
+	if _, err := os.Stat(emd.progressFilePath); os.IsNotExist(err) {
+		return nil, nil // No progress file exists
+	}
+
+	data, err := os.ReadFile(emd.progressFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read progress file: %w", err)
+	}
+
+	var progress EnMasseDownloaderProgress
+	if err := json.Unmarshal(data, &progress); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal progress: %w", err)
+	}
+
+	emd.logger.Debug().Str("progressFile", emd.progressFilePath).Int("processedSeries", progress.ProcessedSeries).Msg("en_masse_downloader: Loaded progress")
+	return &progress, nil
+}
+
+// clearProgress removes the progress file
+func (emd *EnMasseDownloader) clearProgress() error {
+	if _, err := os.Stat(emd.progressFilePath); os.IsNotExist(err) {
+		return nil // No progress file exists
+	}
+
+	if err := os.Remove(emd.progressFilePath); err != nil {
+		return fmt.Errorf("failed to remove progress file: %w", err)
+	}
+
+	emd.logger.Debug().Str("progressFile", emd.progressFilePath).Msg("en_masse_downloader: Cleared progress")
+	return nil
+}
+
+// filterUnprocessedSeries filters out already processed series from the catalogue
+func (emd *EnMasseDownloader) filterUnprocessedSeries(catalogue []WeebCentralCatalogueEntry, processedIDs []string) []WeebCentralCatalogueEntry {
+	processedSet := make(map[string]bool)
+	for _, id := range processedIDs {
+		processedSet[id] = true
+	}
+
+	var unprocessed []WeebCentralCatalogueEntry
+	for _, entry := range catalogue {
+		if !processedSet[entry.ID] {
+			unprocessed = append(unprocessed, entry)
+		}
+	}
+
+	return unprocessed
 }
 
 // GetStatus returns the current status of the en masse downloader
@@ -136,24 +225,55 @@ func (emd *EnMasseDownloader) Start() error {
 		return fmt.Errorf("failed to load catalogue: %w", err)
 	}
 
+	// Load existing progress if available
+	progress, err := emd.loadProgress()
+	if err != nil {
+		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to load progress, starting fresh")
+		progress = nil
+	}
+
+	var catalogueToProcess []WeebCentralCatalogueEntry
+	var resuming bool
+
+	if progress != nil && len(progress.ProcessedSeriesIDs) > 0 {
+		// Resume from existing progress
+		catalogueToProcess = emd.filterUnprocessedSeries(catalogue, progress.ProcessedSeriesIDs)
+		emd.processedSeries = progress.ProcessedSeries
+		emd.startTime = progress.StartTime
+		resuming = true
+		emd.logger.Info().
+			Int("totalSeries", len(catalogue)).
+			Int("processedSeries", emd.processedSeries).
+			Int("remainingSeries", len(catalogueToProcess)).
+			Time("originalStartTime", emd.startTime).
+			Msg("en_masse_downloader: Resuming bulk download process from saved progress")
+	} else {
+		// Start fresh
+		catalogueToProcess = catalogue
+		emd.processedSeries = 0
+		emd.startTime = time.Now()
+		resuming = false
+		emd.logger.Info().
+			Int("totalSeries", len(catalogue)).
+			Msg("en_masse_downloader: Starting fresh bulk download process")
+	}
+
 	emd.isRunning = true
 	emd.totalSeries = len(catalogue)
-	emd.processedSeries = 0
-	emd.startTime = time.Now()
 	emd.stopCh = make(chan struct{})
 
-	emd.logger.Info().
-		Int("totalSeries", emd.totalSeries).
-		Msg("en_masse_downloader: Starting bulk download process")
-
-	emd.wsEventManager.SendEvent(events.InfoToast, fmt.Sprintf("En Masse Downloader started - Processing %d series", emd.totalSeries))
+	if resuming {
+		emd.wsEventManager.SendEvent(events.InfoToast, fmt.Sprintf("En Masse Downloader resumed - %d/%d series remaining", len(catalogueToProcess), emd.totalSeries))
+	} else {
+		emd.wsEventManager.SendEvent(events.InfoToast, fmt.Sprintf("En Masse Downloader started - Processing %d series", emd.totalSeries))
+	}
 
 	// Start the manga download queue to process queued chapters
 	emd.downloader.RunChapterDownloadQueue()
 	emd.logger.Info().Msg("en_masse_downloader: Started manga download queue")
 
 	// Start the download process in a goroutine
-	go emd.processAllSeries(catalogue)
+	go emd.processAllSeries(catalogueToProcess)
 
 	return nil
 }
@@ -203,10 +323,22 @@ func (emd *EnMasseDownloader) loadCatalogue() ([]WeebCentralCatalogueEntry, erro
 
 // processAllSeries processes all series in the catalogue sequentially
 func (emd *EnMasseDownloader) processAllSeries(catalogue []WeebCentralCatalogueEntry) {
+	var processedSeriesIDs []string
+
+	// Load existing processed series IDs if resuming
+	if progress, err := emd.loadProgress(); err == nil && progress != nil {
+		processedSeriesIDs = progress.ProcessedSeriesIDs
+	}
+
 	defer func() {
 		emd.mu.Lock()
 		emd.isRunning = false
 		emd.mu.Unlock()
+
+		// Clear progress file on successful completion
+		if err := emd.clearProgress(); err != nil {
+			emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to clear progress file")
+		}
 
 		// Refresh the metadata cache to ensure newly downloaded manga appear in the UI
 		emd.logger.Info().Msg("en_masse_downloader: Refreshing metadata cache for newly downloaded manga")
@@ -256,6 +388,12 @@ func (emd *EnMasseDownloader) processAllSeries(catalogue []WeebCentralCatalogueE
 			// Update progress
 			emd.mu.Lock()
 			emd.processedSeries++
+			// Add this series to the processed list
+			processedSeriesIDs = append(processedSeriesIDs, entry.ID)
+			// Save progress after each series
+			if err := emd.saveProgress(processedSeriesIDs); err != nil {
+				emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to save progress")
+			}
 			emd.mu.Unlock()
 
 			// Send progress update
@@ -316,6 +454,12 @@ func (emd *EnMasseDownloader) processSeries(entry WeebCentralCatalogueEntry) err
 	// Find the best match (first result for now, could be improved with fuzzy matching)
 	bestMatch := searchResults[0]
 
+	// Log cover image URL for debugging
+	emd.logger.Debug().
+		Str("title", entry.Title).
+		Str("coverImageUrl", bestMatch.Image).
+		Msg("en_masse_downloader: Found cover image URL from search results")
+
 	// Get chapters for the manga
 	chapters, err := provider.FindChapters(bestMatch.ID)
 	if err != nil {
@@ -332,6 +476,7 @@ func (emd *EnMasseDownloader) processSeries(entry WeebCentralCatalogueEntry) err
 	emd.logger.Info().
 		Str("title", entry.Title).
 		Int("chapterCount", len(chapters)).
+		Str("coverImageUrl", bestMatch.Image).
 		Msg("en_masse_downloader: Found chapters, queuing for download")
 
 	// Store the chapter container in filecache under the synthetic media ID
@@ -389,21 +534,22 @@ func (emd *EnMasseDownloader) processSeries(entry WeebCentralCatalogueEntry) err
 			var err error
 			maxRetries := 3
 			baseDelay := 5 * time.Second
-			
+
 			for attempt := 0; attempt <= maxRetries; attempt++ {
 				err = emd.downloader.DownloadChapter(DownloadChapterOptions{
-					Provider:     "weebcentral",
-					MediaId:      mediaID,
-					ChapterId:    chapter.ID,
-					SeriesTitle:  entry.Title,  // Use the series title from the catalogue
-					ChapterTitle: chapterTitle, // Use the extracted chapter title
-					StartNow:     true,         // Use StartNow: true like regular downloads
+					Provider:      "weebcentral",
+					MediaId:       mediaID,
+					ChapterId:     chapter.ID,
+					SeriesTitle:   entry.Title,     // Use the series title from the catalogue
+					ChapterTitle:  chapterTitle,    // Use the extracted chapter title
+					CoverImageUrl: bestMatch.Image, // Store the cover image URL from search results
+					StartNow:      true,            // Use StartNow: true like regular downloads
 				})
-				
+
 				if err == nil {
 					break // Success, exit retry loop
 				}
-				
+
 				// Check if it's a rate limiting error
 				if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "Too Many Requests") {
 					if attempt < maxRetries {
@@ -415,7 +561,7 @@ func (emd *EnMasseDownloader) processSeries(entry WeebCentralCatalogueEntry) err
 							Int("maxRetries", maxRetries).
 							Dur("retryDelay", retryDelay).
 							Msg("en_masse_downloader: Rate limited, retrying after delay")
-							
+
 						// Wait for retry delay, but check for stop signal
 						select {
 						case <-emd.stopCh:
@@ -462,49 +608,17 @@ func (emd *EnMasseDownloader) processSeries(entry WeebCentralCatalogueEntry) err
 	return nil
 }
 
-// findMangaMediaID attempts to find the AniList media ID for a manga series
+// findMangaMediaID generates a synthetic media ID for En Masse downloaded manga
+// Always uses synthetic IDs to ensure compatibility with local provider system
 func (emd *EnMasseDownloader) findMangaMediaID(title, seriesID string) (int, error) {
-	// First try to find in existing manga collection
-	if emd.anilistClient != nil {
-		// Try to get manga collection and search for existing entry
-		collection, err := emd.anilistClient.MangaCollection(context.Background(), nil)
-		if err == nil && collection != nil {
-			// Search through the collection for a matching title
-			for _, list := range collection.MediaListCollection.Lists {
-				for _, entry := range list.Entries {
-					if entry.Media != nil {
-						// Check various title formats for matches
-						if emd.titleMatches(title, entry.Media.Title) {
-							emd.logger.Info().
-								Str("title", title).
-								Int("mediaID", entry.Media.ID).
-								Msg("en_masse_downloader: Found existing media ID in collection")
-							return entry.Media.ID, nil
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// If not found in collection, try AniList search
-	if emd.anilistClient != nil {
-		// Use AniList search for manga - simplified approach
-		// Note: The actual AniList client method might be different
-		// For now, we'll skip the search and use synthetic IDs
-		emd.logger.Debug().
-			Str("title", title).
-			Msg("en_masse_downloader: AniList search not implemented, using synthetic ID")
-	}
-
-	// If all else fails, create a synthetic media ID based on the series ID
-	// This ensures manga can still be downloaded even without AniList integration
+	// For En Masse downloads, always use synthetic IDs to ensure they work with the local provider
+	// This prevents issues where manga exist in AniList collection but need synthetic ID handling
 	syntheticID := emd.generateSyntheticMediaID(seriesID)
 	emd.logger.Info().
 		Str("title", title).
 		Str("seriesID", seriesID).
 		Int("syntheticID", syntheticID).
-		Msg("en_masse_downloader: Using synthetic media ID for manga without AniList match")
+		Msg("en_masse_downloader: Using synthetic media ID for En Masse download")
 
 	return syntheticID, nil
 }
