@@ -238,6 +238,14 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	//
 	v1.GET("/anime/episode-collection/:id", h.HandleGetAnimeEpisodeCollection)
 
+	// Anime Batch Downloader
+	v1.GET("/anime/download-all/status", h.HandleGetAllAnimeDownloadStatus)
+	v1.POST("/anime/database/load", h.HandleLoadAnimeDatabase)
+	v1.POST("/anime/download-all", h.HandleStartAllAnimeDownload)
+	v1.POST("/anime/download-all/cancel", h.HandleCancelAllAnimeDownload)
+	v1.GET("/anime/database/stats", h.HandleGetAnimeDatabaseStats)
+	v1.POST("/anime/download-all/preview", h.HandlePreviewAllAnimeDownload)
+
 	//
 	// Torrent / Torrent Client
 	//
@@ -356,6 +364,9 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Manga.POST("/en-masse-downloader/start", h.HandleStartEnMasseDownloader)
 	v1Manga.POST("/en-masse-downloader/stop", h.HandleStopEnMasseDownloader)
 	v1Manga.GET("/en-masse-downloader/status", h.HandleGetEnMasseDownloaderStatus)
+
+	// Migration routes
+	v1Manga.POST("/migrate-to-synthetic-ids", h.HandleMigrateMangaToSyntheticIDs)
 
 	v1Manga.POST("/search", h.HandleMangaManualSearch)
 	v1Manga.POST("/manual-mapping", h.HandleMangaManualMapping)

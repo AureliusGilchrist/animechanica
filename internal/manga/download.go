@@ -78,12 +78,13 @@ type (
 	}
 
 	DownloadChapterOptions struct {
-		Provider     string
-		MediaId      int
-		ChapterId    string
-		SeriesTitle  string
-		ChapterTitle string
-		StartNow     bool
+		Provider      string
+		MediaId       int
+		ChapterId     string
+		SeriesTitle   string
+		ChapterTitle  string
+		CoverImageUrl string // Cover image URL from search results
+		StartNow      bool
 	}
 )
 
@@ -261,6 +262,7 @@ func (d *Downloader) DownloadChapter(opts DownloadChapterOptions) error {
 			ChapterNumber: manga_providers.GetNormalizedChapter(chapter.Chapter),
 			SeriesTitle:   mangaTitle,
 			ChapterTitle:  chapterTitle,
+			CoverImageUrl: opts.CoverImageUrl, // Pass cover image URL from search results
 		},
 		Pages: pageContainer.Pages,
 	})
@@ -627,4 +629,9 @@ func (d *Downloader) sanitizeForFilesystem(title string) string {
 // When done refreshing, send a message to the client to refetch the download data
 func (d *Downloader) refreshMediaMap() {
 	d.wsEventManager.SendEvent(events.RefreshedMangaDownloadData, nil)
+}
+
+// GetMetadataScanner returns the metadata scanner instance
+func (d *Downloader) GetMetadataScanner() *MetadataScanner {
+	return d.metadataScanner
 }
