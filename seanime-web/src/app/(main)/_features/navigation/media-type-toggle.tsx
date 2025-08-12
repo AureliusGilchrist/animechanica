@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { usePathname, useRouter } from "next/navigation"
+import { cn } from "@/components/ui/core/styling"
 
 type MediaType = "anime" | "manga"
 
@@ -35,20 +36,48 @@ export function MediaTypeToggle() {
     }
     
     return (
-        <div className="flex items-center space-x-1 bg-muted p-1 rounded-lg">
+        <div
+            role="tablist"
+            aria-label="Media type"
+            className={cn(
+                "relative inline-grid grid-cols-2 items-center rounded-full border",
+                "bg-[--app-bg/0.6] backdrop-blur supports-[backdrop-filter]:bg-[--app-bg/0.4]",
+                "border-[--border] p-1 h-9"
+            )}
+        >
+            {/* Animated highlight */}
+            <span
+                aria-hidden
+                className={cn(
+                    "pointer-events-none absolute left-1 top-1 h-7 w-[calc(50%-0.25rem)] rounded-full",
+                    "bg-[--primary-600]/15 ring-1 ring-inset ring-[--primary-400]/30",
+                    "transition-transform duration-200 ease-out",
+                    selectedMediaType === "manga" ? "translate-x-[calc(100%+0.5rem)]" : "translate-x-0"
+                )}
+            />
             <Button
-                intent={selectedMediaType === "anime" ? "primary" : "gray-subtle"}
+                role="tab"
+                aria-selected={selectedMediaType === "anime"}
+                intent={selectedMediaType === "anime" ? "primary-subtle" : "gray-subtle"}
                 size="sm"
                 onClick={() => handleMediaTypeChange("anime")}
-                className="px-4 py-1 text-sm"
+                className={cn(
+                    "relative z-[1] px-4 py-1 text-sm rounded-full",
+                    selectedMediaType === "anime" ? "text-[--primary-200]" : "text-[--muted] hover:text-foreground"
+                )}
             >
                 Anime
             </Button>
             <Button
-                intent={selectedMediaType === "manga" ? "primary" : "gray-subtle"}
+                role="tab"
+                aria-selected={selectedMediaType === "manga"}
+                intent={selectedMediaType === "manga" ? "primary-subtle" : "gray-subtle"}
                 size="sm"
                 onClick={() => handleMediaTypeChange("manga")}
-                className="px-4 py-1 text-sm"
+                className={cn(
+                    "relative z-[1] px-4 py-1 text-sm rounded-full",
+                    selectedMediaType === "manga" ? "text-[--primary-200]" : "text-[--muted] hover:text-foreground"
+                )}
             >
                 Manga
             </Button>

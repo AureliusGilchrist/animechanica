@@ -35,6 +35,7 @@ type CollectionSorting<T extends CollectionType> = BaseCollectionSorting | (T ex
     | "PROGRESS"
     | "AIRDATE"
     | "AIRDATE_DESC"
+    | "SERIES_CHRONO"
     : T extends "manga" ?
         "PROGRESS"
         | "PROGRESS_DESC"
@@ -89,6 +90,7 @@ export const COLLECTION_SORTING_OPTIONS = [
 export const ANIME_COLLECTION_SORTING_OPTIONS = [
     { label: "Aired recently and not up-to-date", value: "AIRDATE_DESC" },
     { label: "Aired oldest and not up-to-date", value: "AIRDATE" },
+    { label: "Series A→Z, then by airdate", value: "SERIES_CHRONO" },
     { label: "Most unwatched episodes", value: "UNWATCHED_EPISODES_DESC" },
     { label: "Least unwatched episodes", value: "UNWATCHED_EPISODES" },
     { label: "Most recent watch", value: "LAST_WATCHED_DESC" },
@@ -264,6 +266,43 @@ export function filterListEntries<T extends AL_MangaCollection_MediaListCollecti
     if (getParamValue(params.sorting) === "PROGRESS_DESC")
         arr = sortBy(arr, n => n?.progress || 0).reverse()
 
+    // Anime-specific: Series A→Z then by airdate within series
+    if (type === "anime" && getParamValue(params.sorting) === "SERIES_CHRONO") {
+        const normalizeSeriesTitle = (title?: string) => {
+            if (!title) return "";
+            const t = title
+                .replace(/\s+/g, " ")
+                .trim()
+                .replace(/\bseason\s*\d+\b/gi, "")
+                .replace(/\b(1st|2nd|3rd|\d+th)\s*season\b/gi, "")
+                .replace(/\bpart\s*\d+\b/gi, "")
+                .replace(/\bcour\s*\d+\b/gi, "")
+                .replace(/\b(tv|ova|ona|special|movie)\b/gi, "")
+                .replace(/\b([ivxlcdm]+)\b$/i, "")
+                .replace(/\b\d+$\b/, "")
+                .replace(/[\-:_]+$/g, "")
+                .trim()
+            return t.toLowerCase()
+        }
+        const toDate = (y?: number | null, m?: number | null, d?: number | null) => {
+            const year = y ?? 9999
+            const month = (m ?? 1) - 1
+            const day = d ?? 1
+            return new Date(year, Math.max(0, month), day)
+        }
+        arr = [...arr].sort((a, b) => {
+            const aTitle = a?.media?.title?.userPreferred || a?.media?.title?.english || a?.media?.title?.romaji
+            const bTitle = b?.media?.title?.userPreferred || b?.media?.title?.english || b?.media?.title?.romaji
+            const aSeries = normalizeSeriesTitle(aTitle || "")
+            const bSeries = normalizeSeriesTitle(bTitle || "")
+            if (aSeries !== bSeries) return aSeries.localeCompare(bSeries)
+            const aDate = toDate(a?.media?.startDate?.year, a?.media?.startDate?.month, a?.media?.startDate?.day)
+            const bDate = toDate(b?.media?.startDate?.year, b?.media?.startDate?.month, b?.media?.startDate?.day)
+            if (aDate.getTime() !== bDate.getTime()) return aDate.getTime() - bDate.getTime()
+            return (a.media?.id || 0) - (b.media?.id || 0)
+        })
+    }
+
     return arr
 }
 
@@ -389,6 +428,53 @@ export function filterAnimeCollectionEntries<T extends Anime_LibraryCollectionEn
     if (getParamValue(params.sorting) === "UNWATCHED_EPISODES_DESC") {
         arr = sortBy(arr,
             n => !!n.libraryData?.mainFileCount ? n.libraryData?.unwatchedCount : anilist_getUnwatchedCount(n.media, n.listData?.progress)).reverse()
+    }
+
+    // Sort by series (normalized) then chronological by media air/start date
+    if (getParamValue(params.sorting) === "SERIES_CHRONO") {
+        const normalizeSeriesTitle = (title?: string) => {
+            if (!title) return "";
+            const t = title
+                .replace(/\s+/g, " ")
+                .trim()
+                // Remove common season/part indicators
+                .replace(/\bseason\s*\d+\b/gi, "")
+                .replace(/\b(1st|2nd|3rd|\d+th)\s*season\b/gi, "")
+                .replace(/\bpart\s*\d+\b/gi, "")
+                .replace(/\bcour\s*\d+\b/gi, "")
+                .replace(/\b(tv|ova|ona|special|movie)\b/gi, "")
+                // Remove trailing roman numerals and numbers
+                .replace(/\b([ivxlcdm]+)\b$/i, "")
+                .replace(/\b\d+$\b/, "")
+                // Remove leftover symbols like '-' ':' at end
+                .replace(/[\-:_]+$/g, "")
+                .trim()
+            return t.toLowerCase()
+        }
+
+        const toDate = (y?: number | null, m?: number | null, d?: number | null) => {
+            const year = y ?? 9999
+            const month = (m ?? 1) - 1
+            const day = d ?? 1
+            return new Date(year, Math.max(0, month), day)
+        }
+
+        arr = [...arr].sort((a, b) => {
+            const aTitle = a?.media?.title?.userPreferred || a?.media?.title?.english || a?.media?.title?.romaji
+            const bTitle = b?.media?.title?.userPreferred || b?.media?.title?.english || b?.media?.title?.romaji
+            const aSeries = normalizeSeriesTitle(aTitle || "")
+            const bSeries = normalizeSeriesTitle(bTitle || "")
+
+            if (aSeries !== bSeries) return aSeries.localeCompare(bSeries)
+
+            const aDate = toDate(a?.media?.startDate?.year, a?.media?.startDate?.month, a?.media?.startDate?.day)
+            const bDate = toDate(b?.media?.startDate?.year, b?.media?.startDate?.month, b?.media?.startDate?.day)
+
+            if (aDate.getTime() !== bDate.getTime()) return aDate.getTime() - bDate.getTime()
+
+            // Fallback: by id to keep sort stable
+            return (a.media?.id || 0) - (b.media?.id || 0)
+        })
     }
 
     // Sort by last watched

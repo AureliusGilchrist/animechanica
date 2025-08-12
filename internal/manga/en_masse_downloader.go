@@ -46,6 +46,7 @@ type (
 		delayBetweenChapters time.Duration
 		delayBetweenSeries   time.Duration
 		progressFilePath     string
+		runningStateFilePath string
 	}
 
 	// WeebCentralCatalogueEntry represents a manga series in the weebcentral catalogue
@@ -74,6 +75,12 @@ type (
 		LastUpdated        time.Time `json:"lastUpdated"`
 	}
 
+	// enMasseDownloaderRunningState persists whether the downloader was running
+	enMasseDownloaderRunningState struct {
+		Running     bool      `json:"running"`
+		LastUpdated time.Time `json:"lastUpdated"`
+	}
+
 	// EnMasseDownloaderOptions contains options for creating a new EnMasseDownloader
 	EnMasseDownloaderOptions struct {
 		Logger         *zerolog.Logger
@@ -91,6 +98,7 @@ func NewEnMasseDownloader(opts *EnMasseDownloaderOptions) *EnMasseDownloader {
 	// Create progress file path in the same directory as the catalogue
 	catalogueDir := filepath.Dir(opts.CataloguePath)
 	progressFilePath := filepath.Join(catalogueDir, "en_masse_downloader_progress.json")
+	runningStateFilePath := filepath.Join(catalogueDir, "en_masse_downloader_running.json")
 
 	return &EnMasseDownloader{
 		logger:               opts.Logger,
@@ -101,6 +109,7 @@ func NewEnMasseDownloader(opts *EnMasseDownloaderOptions) *EnMasseDownloader {
 		downloader:           opts.Downloader,
 		cataloguePath:        opts.CataloguePath,
 		progressFilePath:     progressFilePath,
+		runningStateFilePath: runningStateFilePath,
 		delayBetweenChapters: 2 * time.Second,  // Increased from 100ms to 2s to reduce rate limiting
 		delayBetweenSeries:   10 * time.Second, // Increased from 3s to 10s to reduce rate limiting
 		stopCh:               make(chan struct{}),
@@ -128,6 +137,37 @@ func (emd *EnMasseDownloader) saveProgress(processedSeriesIDs []string) error {
 
 	emd.logger.Debug().Str("progressFile", emd.progressFilePath).Int("processedSeries", emd.processedSeries).Msg("en_masse_downloader: Saved progress")
 	return nil
+}
+
+// setRunningState persists the running state to disk
+func (emd *EnMasseDownloader) setRunningState(running bool) {
+	state := &enMasseDownloaderRunningState{
+		Running:     running,
+		LastUpdated: time.Now(),
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to marshal running state")
+		return
+	}
+	if err := os.WriteFile(emd.runningStateFilePath, data, 0644); err != nil {
+		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to write running state file")
+		return
+	}
+	emd.logger.Debug().Str("stateFile", emd.runningStateFilePath).Bool("running", running).Msg("en_masse_downloader: Saved running state")
+}
+
+// WasRunning returns true if the previous process indicated it was running
+func (emd *EnMasseDownloader) WasRunning() bool {
+	data, err := os.ReadFile(emd.runningStateFilePath)
+	if err != nil {
+		return false
+	}
+	var state enMasseDownloaderRunningState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return false
+	}
+	return state.Running
 }
 
 // loadProgress loads the progress from a file
@@ -262,6 +302,9 @@ func (emd *EnMasseDownloader) Start() error {
 	emd.totalSeries = len(catalogue)
 	emd.stopCh = make(chan struct{})
 
+	// Persist running state for auto-resume on next startup
+	emd.setRunningState(true)
+
 	if resuming {
 		emd.wsEventManager.SendEvent(events.InfoToast, fmt.Sprintf("En Masse Downloader resumed - %d/%d series remaining", len(catalogueToProcess), emd.totalSeries))
 	} else {
@@ -289,6 +332,9 @@ func (emd *EnMasseDownloader) Stop() error {
 
 	close(emd.stopCh)
 	emd.isRunning = false
+
+	// Clear running state so we don't auto-resume after a manual stop
+	emd.setRunningState(false)
 
 	emd.logger.Info().Msg("en_masse_downloader: Stopping bulk download process")
 	emd.wsEventManager.SendEvent(events.InfoToast, "En Masse Downloader stopped")
@@ -334,6 +380,9 @@ func (emd *EnMasseDownloader) processAllSeries(catalogue []WeebCentralCatalogueE
 		emd.mu.Lock()
 		emd.isRunning = false
 		emd.mu.Unlock()
+
+		// Ensure running state is cleared on completion
+		emd.setRunningState(false)
 
 		// Clear progress file on successful completion
 		if err := emd.clearProgress(); err != nil {

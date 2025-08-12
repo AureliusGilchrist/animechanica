@@ -256,6 +256,16 @@ func (a *App) initModulesOnce() {
 		CataloguePath:  "/aeternae/library/manga/seanime/weebcentral_catalogue.json",
 	})
 
+	// Auto-resume En Masse Downloader if it was running before shutdown
+	if a.EnMasseDownloader.WasRunning() {
+		a.Logger.Info().Msg("en_masse_downloader: Auto-resume detected, starting on app initialization")
+		if err := a.EnMasseDownloader.Start(); err != nil {
+			a.Logger.Warn().Err(err).Msg("en_masse_downloader: Failed to auto-start on initialization")
+		} else {
+			a.WSEventManager.SendEvent(events.InfoToast, "En Masse Downloader auto-resumed after restart")
+		}
+	}
+
 	// +---------------------+
 	// |    Media Stream     |
 	// +---------------------+
