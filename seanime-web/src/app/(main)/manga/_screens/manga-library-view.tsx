@@ -14,17 +14,20 @@ import { Button, IconButton } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { useDebounce } from "@/hooks/use-debounce"
 import { getMangaCollectionTitle } from "@/lib/server/utils"
+import { filterEntriesByTitle } from "@/lib/helpers/filtering"
 import { ThemeLibraryScreenBannerType, useThemeSettings } from "@/lib/theme/hooks"
 import { useSetAtom } from "jotai/index"
 import { useAtom, useAtomValue } from "jotai/react"
 import { AnimatePresence } from "motion/react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import React, { memo } from "react"
 import { BiDotsVertical } from "react-icons/bi"
 import { LuBookOpenCheck, LuRefreshCcw } from "react-icons/lu"
 import { toast } from "sonner"
 import { CommandItemMedia } from "../../_features/sea-command/_components/command-utils"
+import { TextInput } from "@/components/ui/text-input/text-input"
+import { LuSearch } from "react-icons/lu"
+import { useRouter, useSearchParams } from "next/navigation"
 
 type MangaLibraryViewProps = {
     collection: Manga_Collection
@@ -46,6 +49,39 @@ export function MangaLibraryView(props: MangaLibraryViewProps) {
     } = props
 
     const [params, setParams] = useAtom(__mangaLibrary_paramsAtom)
+    const [search, setSearch] = React.useState("")
+    const debouncedSearch = useDebounce(search, 200)
+    const router = useRouter()
+    const searchParams = useSearchParams()
+    const pageParam = React.useMemo(() => {
+        const v = parseInt(searchParams.get("page") || "", 10)
+        return Number.isFinite(v) && v > 0 ? v : null
+    }, [searchParams])
+    const PER_PAGE = 20
+
+    const flattenedEntries = React.useMemo(() => {
+        const source = (!params.genre?.length ? collection : filteredCollection)
+        return source?.lists?.flatMap(n => n.entries).filter(Boolean) ?? []
+    }, [collection, filteredCollection, params.genre])
+
+    const searchResults = React.useMemo(() => {
+        const q = debouncedSearch.trim()
+        if (!q) return flattenedEntries
+        return filterEntriesByTitle(flattenedEntries, q)
+    }, [flattenedEntries, debouncedSearch])
+
+    const isPaginatedMode = (pageParam !== null) || debouncedSearch.trim().length > 0
+    const totalPages = Math.max(1, Math.ceil(searchResults.length / PER_PAGE))
+    const currentPage = Math.min(pageParam ?? 1, totalPages)
+    const pageStart = (currentPage - 1) * PER_PAGE
+    const pageSlice = searchResults.slice(pageStart, pageStart + PER_PAGE)
+
+    const setPage = (p: number) => {
+        const page = Math.min(Math.max(1, p), totalPages)
+        const sp = new URLSearchParams(searchParams.toString())
+        sp.set("page", String(page))
+        router.replace(`?${sp.toString()}`)
+    }
 
     return (
         <>
@@ -77,10 +113,48 @@ export function MangaLibraryView(props: MangaLibraryViewProps) {
                         </div>
                     </LuffyError>}
 
-                    {!params.genre?.length ?
-                        <CollectionLists key="lists" collectionList={collection} genres={genres} storedProviders={storedProviders} />
-                        : <FilteredCollectionLists key="filtered-collection" collectionList={filteredCollection} genres={genres} />
-                    }
+                    {/* Search bar */}
+                    <div className="max-w-xl mb-4">
+                        <TextInput
+                            placeholder="Search manga by title..."
+                            leftIcon={<LuSearch />}
+                            value={search}
+                            onValueChange={setSearch}
+                            intent="basic"
+                            size="md"
+                        />
+                    </div>
+
+                    {/* When searching or page param present, show a single combined paginated grid */}
+                    {isPaginatedMode ? (
+                        <>
+                        <MediaCardLazyGrid itemCount={pageSlice.length}>
+                            {pageSlice.map(entry => (
+                                <div key={entry.media?.id}>
+                                    <MediaEntryCard
+                                        media={entry.media!}
+                                        listData={entry.listData}
+                                        showListDataButton
+                                        withAudienceScore={false}
+                                        type="manga"
+                                    />
+                                </div>
+                            ))}
+                        </MediaCardLazyGrid>
+                        {/* Pagination controls */}
+                        <div className="flex items-center justify-center gap-2 mt-4">
+                            <Button size="sm" intent="white-outline" onClick={() => setPage(1)} disabled={currentPage === 1}>{"<<"}</Button>
+                            <Button size="sm" intent="white-outline" onClick={() => setPage(currentPage - 1)} disabled={currentPage === 1}>{"<"}</Button>
+                            <span className="text-sm text-muted-foreground">Page {currentPage} of {totalPages} • {searchResults.length} items</span>
+                            <Button size="sm" intent="white-outline" onClick={() => setPage(currentPage + 1)} disabled={currentPage === totalPages}>{">"}</Button>
+                            <Button size="sm" intent="white-outline" onClick={() => setPage(totalPages)} disabled={currentPage === totalPages}>{">>"}</Button>
+                        </div>
+                        </>
+                    ) : (
+                        !params.genre?.length ?
+                            <CollectionLists key="lists" collectionList={collection} genres={genres} storedProviders={storedProviders} />
+                            : <FilteredCollectionLists key="filtered-collection" collectionList={filteredCollection} genres={genres} />
+                    )}
                 </AnimatePresence>
             </PageWrapper>
         </>

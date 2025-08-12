@@ -21,6 +21,10 @@ import (
 	hibikemanga "seanime/internal/extension/hibike/manga"
 
 	"github.com/labstack/echo/v4"
+	"crypto/sha256"
+	"encoding/json"
+	"os"
+	"io"
 )
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -30,10 +34,52 @@ var (
 	mangaDetailsCache = result.NewCache[int, *anilist.MangaDetailsById_Media]()
 )
 
-// HandleGetAnilistMangaCollection
-//
-//	@summary returns the user's AniList manga collection.
-//	@route /api/v1/manga/anilist/collection [GET]
+// ensureOfflineCoverImage copies the discovered cover image from the manga download directory
+// into the offline assets directory under the synthetic ID if it is missing.
+// - srcRelPath should be relative to the configured download dir (as produced by the metadata scanner)
+func (h *Handler) ensureOfflineCoverImage(syntheticID int, srcRelPath string) {
+    if srcRelPath == "" {
+        return
+    }
+    // Resolve paths
+    downloadDir := h.App.Config.Manga.DownloadDir
+    assetsDir := h.App.Config.Offline.AssetDir
+    if downloadDir == "" || assetsDir == "" {
+        return
+    }
+    srcPath := filepath.Join(downloadDir, srcRelPath)
+    dstDir := filepath.Join(assetsDir, fmt.Sprintf("%d", syntheticID))
+    dstPath := filepath.Join(dstDir, filepath.Base(srcRelPath))
+
+    // If destination already exists, nothing to do
+    if st, err := os.Stat(dstPath); err == nil && !st.IsDir() {
+        return
+    }
+
+    // Make sure source exists
+    if st, err := os.Stat(srcPath); err != nil || st.IsDir() {
+        return
+    }
+
+    // Ensure destination directory exists
+    if err := os.MkdirAll(dstDir, 0o755); err != nil {
+        return
+    }
+
+    // Copy file
+    src, err := os.Open(srcPath)
+    if err != nil {
+        return
+    }
+    defer src.Close()
+    dst, err := os.Create(dstPath)
+    if err != nil {
+        return
+    }
+    defer dst.Close()
+    _, _ = io.Copy(dst, src)
+}
+
 //	@returns anilist.MangaCollection
 func (h *Handler) HandleGetAnilistMangaCollection(c echo.Context) error {
 
@@ -634,6 +680,22 @@ func (h *Handler) HandleGetDownloadedMangaSeries(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, err.Error())
 	}
 
+	// Compute ETag from payload to enable client caching
+	bodyBytes, err := json.Marshal(downloadedSeries)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, err.Error())
+	}
+	checksum := sha256.Sum256(bodyBytes)
+	etag := "\"dls-" + fmt.Sprintf("%x", checksum[:8]) + "\"" // short, stable ETag
+
+	if inm := c.Request().Header.Get("If-None-Match"); inm != "" && inm == etag {
+		return c.NoContent(http.StatusNotModified)
+	}
+
+	headers := c.Response().Header()
+	headers.Set("ETag", etag)
+	headers.Set("Cache-Control", "public, max-age=60")
+
 	return c.JSON(http.StatusOK, downloadedSeries)
 }
 
@@ -712,6 +774,11 @@ func (h *Handler) createSyntheticMangaEntry(syntheticID int) (*manga.Entry, erro
 	if targetSeries == nil {
 		return nil, fmt.Errorf("no downloaded manga found for synthetic ID %d", syntheticID)
 	}
+
+	// Ensure cover image is present under offline assets for this synthetic ID
+    if targetSeries.CoverImagePath != "" {
+        h.ensureOfflineCoverImage(syntheticID, targetSeries.CoverImagePath)
+    }
 
 	// Create comprehensive synthetic manga entry using the downloaded metadata
 	status := anilist.MediaStatusFinished

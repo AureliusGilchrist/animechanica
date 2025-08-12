@@ -35,7 +35,10 @@ export function useGetDownloadedMangaSeries() {
         },
         enabled: serverStatus?.isOffline === false,
         refetchOnWindowFocus: false,
-        staleTime: 5 * 60 * 1000, // 5 minutes
+        refetchOnReconnect: false,
+        refetchOnMount: false,
+        staleTime: 30 * 60 * 1000, // 30 minutes
+        gcTime: 2 * 60 * 60 * 1000, // 2 hours (cache retention)
     })
 }
 

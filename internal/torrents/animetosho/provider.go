@@ -25,6 +25,28 @@ var (
 	ProviderName = "animetosho"
 )
 
+// Global rate limiter for AnimeTosho API to prevent 503 errors
+var (
+	animeToshoRateLimiter     *time.Ticker
+	animeToshoRateLimiterOnce sync.Once
+	animeToshoMutex           sync.Mutex
+)
+
+// waitForAnimeToshoSlot enforces rate limiting with mutex protection
+func waitForAnimeToshoSlot() {
+	animeToshoRateLimiterOnce.Do(func() {
+		// Conservative rate limiting: 1 request every 2 seconds to prevent 503 errors
+		animeToshoRateLimiter = time.NewTicker(2 * time.Second)
+	})
+	
+	// Mutex ensures only one goroutine can make a request at a time
+	animeToshoMutex.Lock()
+	defer animeToshoMutex.Unlock()
+	
+	// Wait for the rate limiter tick
+	<-animeToshoRateLimiter.C
+}
+
 type (
 	Provider struct {
 		logger         *zerolog.Logger
@@ -246,6 +268,7 @@ type sneedexItem struct {
 
 func (at *Provider) loadSneedex() {
 	// Load Sneedex Nyaa IDs
+	waitForAnimeToshoSlot()
 	resp, err := http.Get("https://sneedex.moe/api/public/nyaa")
 	if err != nil {
 		at.logger.Error().Err(err).Msg("animetosho: Failed to fetch Sneedex Nyaa IDs")
@@ -434,6 +457,7 @@ func (at *Provider) fetchTorrents(suffix string) (torrents []*Torrent, err error
 
 	at.logger.Debug().Str("url", furl).Msg("animetosho: Fetching torrents")
 
+	waitForAnimeToshoSlot()
 	resp, err := http.Get(furl)
 	if err != nil {
 		return nil, err
@@ -457,11 +481,13 @@ func (at *Provider) fetchTorrents(suffix string) (torrents []*Torrent, err error
 	}
 
 	for _, t := range ret {
-		if t.Seeders > 100000 {
-			t.Seeders = 0
+		// Cap unrealistic seeder/leecher counts instead of zeroing them
+		// AnimeTosho sometimes returns invalid high values, but 100k was too low
+		if t.Seeders > 1000000 {
+			t.Seeders = 9999 // Cap at reasonable maximum
 		}
-		if t.Leechers > 100000 {
-			t.Leechers = 0
+		if t.Leechers > 1000000 {
+			t.Leechers = 9999 // Cap at reasonable maximum
 		}
 	}
 

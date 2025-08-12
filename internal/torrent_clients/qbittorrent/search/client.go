@@ -18,17 +18,26 @@ type Client struct {
 }
 
 func (c Client) Start(pattern string, plugins, categories []string) (int, error) {
-	params := url.Values{}
-	params.Add("pattern", pattern)
-	params.Add("plugins", strings.Join(plugins, "|"))
-	params.Add("category", strings.Join(categories, "|"))
-	var res struct {
-		ID int `json:"id"`
-	}
-	if err := qbittorrent_util.GetInto(c.Client, &res, c.BaseUrl+"/start?"+params.Encode(), nil); err != nil {
-		return 0, err
-	}
-	return res.ID, nil
+    // qBittorrent API requires POST to /search/start with form-encoded body
+    form := url.Values{}
+    form.Add("pattern", pattern)
+    if plugins != nil {
+        form.Add("plugins", strings.Join(plugins, "|"))
+    } else {
+        form.Add("plugins", "")
+    }
+    if categories != nil {
+        form.Add("category", strings.Join(categories, "|"))
+    } else {
+        form.Add("category", "")
+    }
+    var res struct {
+        ID int `json:"id"`
+    }
+    if err := qbittorrent_util.PostIntoWithContentType(c.Client, c.BaseUrl+"/start", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded", &res); err != nil {
+        return 0, err
+    }
+    return res.ID, nil
 }
 
 func (c Client) Stop(id int) error {

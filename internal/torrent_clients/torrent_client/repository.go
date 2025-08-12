@@ -3,8 +3,6 @@ package torrent_client
 import (
 	"context"
 	"errors"
-	"github.com/hekmon/transmissionrpc/v3"
-	"github.com/rs/zerolog"
 	"regexp"
 	"seanime/internal/api/metadata"
 	"seanime/internal/events"
@@ -15,179 +13,270 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/hekmon/transmissionrpc/v3"
+	"github.com/rs/zerolog"
 )
 
-// SearchBestMagnet performs a qBittorrent search and returns the best matching batch torrent magnet/URL.
-// It enforces batch-only selection by filtering out single-episode results.
+// SearchBestMagnet performs multiple qBittorrent searches using query variants and
+// selects the best torrent by a biased scoring system: Batch > Dual Audio > Resolution > BD.
+// A candidate must meet minSeeders and at least 50% match rate across these 4 features,
+// unless "batch" is present (then it's allowed regardless of match rate). Duplicates are deduped by FileName.
 // plugins and categories can be nil to use all enabled providers.
 func (r *Repository) SearchBestMagnet(ctx context.Context, query string, plugins, categories []string, minSeeders int) (string, error) {
-    if r.provider != QbittorrentClient || r.qBittorrentClient == nil {
-        return "", errors.New("torrent client: qBittorrent provider not available for search")
-    }
+	if r.provider != QbittorrentClient || r.qBittorrentClient == nil {
+		return "", errors.New("torrent client: qBittorrent provider not available for search")
+	}
 
-    id, err := r.qBittorrentClient.Search.Start(query, plugins, categories)
-    if err != nil {
-        return "", err
-    }
-    // Ensure cleanup
-    defer func() { _ = r.qBittorrentClient.Search.Delete(id) }()
+	// Build query variants to broaden coverage
+	base := strings.TrimSpace(query)
+	variants := []string{
+		base,
+		base + " batch",
+		base + " dual audio",
+		base + " bluray",
+		base + " bd",
+		base + " 1080p",
+		base + " 720p",
+		base + " 1080p batch",
+		base + " 720p batch",
+		base + " bluray batch",
+		base + " dual audio batch",
+	}
 
-    timeout := time.After(30 * time.Second)
-    ticker := time.NewTicker(1 * time.Second)
-    defer ticker.Stop()
-    for {
-        select {
-        case <-ctx.Done():
-            return "", ctx.Err()
-        case <-timeout:
-            return "", errors.New("torrent client: search timeout")
-        case <-ticker.C:
-            st, err := r.qBittorrentClient.Search.GetStatus(id)
-            if err != nil {
-                return "", err
-            }
-            if strings.EqualFold(st.Status, "Running") {
-                continue
-            }
-            // Finished or stopped, retrieve results
-            results, err := r.qBittorrentClient.Search.GetResults(id, 200, 0)
-            if err != nil {
-                return "", err
-            }
-            if results == nil || len(results.Results) == 0 {
-                return "", errors.New("torrent client: no search results")
-            }
-            // Filter to batch-only and by seeders
-            candidates := make([]qbittorrent_model.SearchResult, 0, len(results.Results))
-            for _, r0 := range results.Results {
-                if r0.NumSeeders < minSeeders {
-                    continue
-                }
-                name := r0.FileName
-                if isBatchTitle(name) {
-                    candidates = append(candidates, r0)
-                }
-            }
-            if len(candidates) == 0 {
-                return "", errors.New("torrent client: no batch results above seeder threshold")
-            }
-            // Pick best: prioritize highest resolution, then (optionally) dual-audio and bluray when requested,
-            // then seeders, then file size
-            preferDual := prefersDualAudio(query)
-            preferBluray := prefersBluray(query)
-            best := candidates[0]
-            for _, c := range candidates[1:] {
-                br, cr := resolutionScore(best.FileName), resolutionScore(c.FileName)
-                if cr > br {
-                    best = c
-                    continue
-                }
-                if cr == br {
-                    // If user requested dual-audio, prefer titles that indicate dual audio
-                    if preferDual {
-                        bd, cd := dualAudioScore(best.FileName), dualAudioScore(c.FileName)
-                        if cd > bd {
-                            best = c
-                            continue
-                        }
-                    }
-                    // If user requested bluray, prefer titles that indicate BD/Bluray
-                    if preferBluray {
-                        bb, cb := blurayScore(best.FileName), blurayScore(c.FileName)
-                        if cb > bb {
-                            best = c
-                            continue
-                        }
-                    }
-                    if c.NumSeeders > best.NumSeeders {
-                        best = c
-                        continue
-                    }
-                    if c.NumSeeders == best.NumSeeders && c.FileSize > best.FileSize {
-                        best = c
-                    }
-                }
-            }
-            return best.FileUrl, nil
-        }
-    }
+	// Aggregate results across variants
+	type agg struct{ qbittorrent_model.SearchResult }
+	all := make(map[string]agg) // key by filename to dedupe
+	// Simple pacing to avoid rate limiting
+	minInterval := 300 * time.Millisecond
+	// Early-exit heuristic when we already found a strong batch candidate
+	foundStrong := false
+
+	for _, v := range variants {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+
+		id, err := r.qBittorrentClient.Search.Start(v, plugins, categories)
+		if err != nil {
+			// Try next variant
+			time.Sleep(minInterval)
+			continue
+		}
+		// Ensure cleanup per search id
+		func() {
+			defer func() { _ = r.qBittorrentClient.Search.Delete(id) }()
+			timeout := time.After(20 * time.Second)
+			ticker := time.NewTicker(1 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-timeout:
+					return
+				case <-ticker.C:
+					st, err := r.qBittorrentClient.Search.GetStatus(id)
+					if err != nil {
+						// transient/backoff
+						time.Sleep(500 * time.Millisecond)
+						// one retry only
+						st, err = r.qBittorrentClient.Search.GetStatus(id)
+						if err != nil {
+							return
+						}
+					}
+					if strings.EqualFold(st.Status, "Running") {
+						continue
+					}
+					res, err := r.qBittorrentClient.Search.GetResults(id, 300, 0)
+					if err != nil || res == nil {
+						// transient/backoff
+						time.Sleep(500 * time.Millisecond)
+						res, err = r.qBittorrentClient.Search.GetResults(id, 300, 0)
+						if err != nil || res == nil {
+							return
+						}
+					}
+					for _, r0 := range res.Results {
+						// Deduplicate by filename (provider URLs may differ)
+						key := strings.TrimSpace(r0.FileName)
+						if key == "" {
+							key = r0.FileUrl
+						}
+						if _, ok := all[key]; ok {
+							// Keep the one with more seeders/size if duplicate name appears
+							if r0.NumSeeders > all[key].NumSeeders || (r0.NumSeeders == all[key].NumSeeders && r0.FileSize > all[key].FileSize) {
+								all[key] = agg{r0}
+							}
+						} else {
+							all[key] = agg{r0}
+						}
+						// Mark strong candidate to stop early: batch + >=1080p + seeders ok
+						if !foundStrong && isBatchTitle(r0.FileName) && r0.NumSeeders >= minSeeders && resolutionScore(r0.FileName) >= 3 {
+							foundStrong = true
+						}
+					}
+					return
+				}
+			}
+		}()
+		// Pacing between variants
+		time.Sleep(minInterval)
+		if foundStrong {
+			break
+		}
+	}
+
+	if len(all) == 0 {
+		return "", errors.New("torrent client: no search results across variants")
+	}
+
+	// Scoring: Batch > Dual > Resolution > BD
+	bestSet := false
+	var bestRes qbittorrent_model.SearchResult
+	bestScore := -1
+
+	for _, w := range all {
+		r0 := w.SearchResult
+		if r0.NumSeeders < minSeeders {
+			continue
+		}
+		title := r0.FileName
+		hasBatch := isBatchTitle(title)
+		dual := dualAudioScore(title) > 0
+		res := resolutionScore(title)
+		bd := blurayScore(title)
+
+		// Match rate across 4 features
+		matches := 0
+		if hasBatch {
+			matches++
+		}
+		if dual {
+			matches++
+		}
+		if res > 0 {
+			matches++
+		}
+		if bd > 0 {
+			matches++
+		}
+		matchRate := float64(matches) / 4.0
+		if matchRate < 0.5 && !hasBatch {
+			// below threshold unless it has batch
+			continue
+		}
+
+		// Bias scoring
+		score := 0
+		if hasBatch {
+			score += 100
+		}
+		if dual {
+			score += 50
+		}
+		if res > 0 {
+			score += 20 + res // light weight; still preserves higher res preference
+		}
+		if bd > 0 {
+			score += 10 + bd // slight BD boost
+		}
+
+		// Tie-breakers: resolution, seeders, then size
+		if score > bestScore ||
+			(score == bestScore && res > resolutionScore(bestRes.FileName)) ||
+			(score == bestScore && res == resolutionScore(bestRes.FileName) && r0.NumSeeders > bestRes.NumSeeders) ||
+			(score == bestScore && res == resolutionScore(bestRes.FileName) && r0.NumSeeders == bestRes.NumSeeders && r0.FileSize > bestRes.FileSize) {
+			bestScore = score
+			bestRes = r0
+			bestSet = true
+		}
+	}
+
+	if !bestSet {
+		return "", errors.New("torrent client: no candidate met threshold")
+	}
+	return bestRes.FileUrl, nil
 }
 
 var (
-    reRange     = regexp.MustCompile(`(?i)\b(\d{1,2})\s*[-~–]\s*(\d{1,3})\b`)
-    reSeasonTag = regexp.MustCompile(`(?i)\bS(\d{1,2})\b`)
-    reComplete  = regexp.MustCompile(`(?i)\b(complete|batch|全集|全巻)\b`)
-    reSingleEp  = regexp.MustCompile(`(?i)(?:\b(ep|e|episode)\s*\d{1,3}\b|\[(\d{1,3})\]|[-_\s]\d{1,3}(?:\D|$))`)
+	reRange     = regexp.MustCompile(`(?i)\b(\d{1,2})\s*[-~–]\s*(\d{1,3})\b`)
+	reSeasonTag = regexp.MustCompile(`(?i)\bS(\d{1,2})\b`)
+	reComplete  = regexp.MustCompile(`(?i)\b(complete|batch|全集|全巻)\b`)
+	reSingleEp  = regexp.MustCompile(`(?i)(?:\b(ep|e|episode)\s*\d{1,3}\b|\[(\d{1,3})\]|[-_\s]\d{1,3}(?:\D|$))`)
 )
 
 // isBatchTitle returns true if the given title likely represents a batch/pack torrent rather than a single episode.
 func isBatchTitle(title string) bool {
-    t := strings.TrimSpace(title)
-    if t == "" {
-        return false
-    }
-    // Positive signals: explicit batch words, range like 1-12, season tags
-    if reComplete.MatchString(t) || reRange.MatchString(t) || reSeasonTag.MatchString(t) {
-        return true
-    }
-    // Negative: obvious single-episode patterns
-    if reSingleEp.MatchString(t) && !reRange.MatchString(t) {
-        return false
-    }
-    // Default: require at least one positive indicator
-    return false
+	t := strings.TrimSpace(title)
+	if t == "" {
+		return false
+	}
+	// Positive signals: explicit batch words, range like 1-12, season tags
+	if reComplete.MatchString(t) || reRange.MatchString(t) || reSeasonTag.MatchString(t) {
+		return true
+	}
+	// Negative: obvious single-episode patterns
+	if reSingleEp.MatchString(t) && !reRange.MatchString(t) {
+		return false
+	}
+	// Default: require at least one positive indicator
+	return false
 }
 
 // resolutionScore extracts a simple resolution score from a torrent title.
 // Higher is better: 2160p/4K > 1080p > 720p > 480p > unknown(0)
 func resolutionScore(title string) int {
-    t := strings.ToLower(title)
-    if strings.Contains(t, "2160p") || strings.Contains(t, "4k") {
-        return 4
-    }
-    if strings.Contains(t, "1080p") {
-        return 3
-    }
-    if strings.Contains(t, "720p") {
-        return 2
-    }
-    if strings.Contains(t, "480p") || strings.Contains(t, "576p") {
-        return 1
-    }
-    return 0
+	t := strings.ToLower(title)
+	if strings.Contains(t, "2160p") || strings.Contains(t, "4k") {
+		return 4
+	}
+	if strings.Contains(t, "1080p") {
+		return 3
+	}
+	if strings.Contains(t, "720p") {
+		return 2
+	}
+	if strings.Contains(t, "480p") || strings.Contains(t, "576p") {
+		return 1
+	}
+	return 0
 }
 
 // prefersDualAudio checks if the query indicates the user prefers dual-audio.
 func prefersDualAudio(query string) bool {
-    q := strings.ToLower(query)
-    return strings.Contains(q, "dual audio") || strings.Contains(q, "dual-audio") || strings.Contains(q, "dual")
+	q := strings.ToLower(query)
+	return strings.Contains(q, "dual audio") || strings.Contains(q, "dual-audio") || strings.Contains(q, "dual")
 }
 
 // prefersBluray checks if the query indicates the user prefers bluray/BD.
 func prefersBluray(query string) bool {
-    q := strings.ToLower(query)
-    return strings.Contains(q, "bluray") || strings.Contains(q, "bd") || strings.Contains(q, "bdrip")
+	q := strings.ToLower(query)
+	return strings.Contains(q, "bluray") || strings.Contains(q, "bd") || strings.Contains(q, "bdrip")
 }
 
 // dualAudioScore returns 1 if the title suggests dual audio, else 0.
 func dualAudioScore(title string) int {
-    t := strings.ToLower(title)
-    if strings.Contains(t, "dual audio") || strings.Contains(t, "dual-audio") || strings.Contains(t, "dual") || strings.Contains(t, "eng+jpn") {
-        return 1
-    }
-    return 0
+	t := strings.ToLower(title)
+	if strings.Contains(t, "dual audio") || strings.Contains(t, "dual-audio") || strings.Contains(t, "dual") || strings.Contains(t, "eng+jpn") {
+		return 1
+	}
+	return 0
 }
 
 // blurayScore returns 2 for strong bluray indicators, 1 for weaker BD indications, else 0.
 func blurayScore(title string) int {
-    t := strings.ToLower(title)
-    if strings.Contains(t, "bluray") || strings.Contains(t, "bdrip") {
-        return 2
-    }
-    if strings.Contains(t, "bd") {
-        return 1
-    }
-    return 0
+	t := strings.ToLower(title)
+	if strings.Contains(t, "bluray") || strings.Contains(t, "bdrip") {
+		return 2
+	}
+	if strings.Contains(t, "bd") {
+		return 1
+	}
+	return 0
 }
 
 const (

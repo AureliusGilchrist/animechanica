@@ -20,6 +20,18 @@ const nextConfig = {
         reactCompiler: true,
     },
     devIndicators: false,
+    async rewrites() {
+        // In development, forward API calls to the backend server so fetch('/api/...') reaches Echo.
+        if (!isProd) {
+            return [
+                {
+                    source: '/api/:path*',
+                    destination: `http://${internalHost}:43210/api/:path*`,
+                },
+            ]
+        }
+        return []
+    },
 }
 
 module.exports = nextConfig

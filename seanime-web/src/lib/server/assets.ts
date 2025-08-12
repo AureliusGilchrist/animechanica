@@ -2,7 +2,10 @@ import { getServerBaseUrl } from "@/api/client/server-url"
 
 export function getImageUrl(path: string) {
     if (path.startsWith("{{LOCAL_ASSETS}}")) {
-        return `${getServerBaseUrl()}/${path.replace("{{LOCAL_ASSETS}}", "offline-assets")}`
+        const replaced = path.replace("{{LOCAL_ASSETS}}", "offline-assets")
+        // Append deterministic cache-busting query tied to the asset path
+        const v = encodeURIComponent(replaced)
+        return `${getServerBaseUrl()}/${replaced}?v=${v}`
     }
 
     return path
@@ -18,7 +21,9 @@ export function getAssetUrl(path: string) {
     p = encodeURIComponent(p).replace(/\(/g, "%28").replace(/\)/g, "%29")
 
     if (p.startsWith("{{LOCAL_ASSETS}}")) {
-        return `${getServerBaseUrl()}/${p.replace("{{LOCAL_ASSETS}}", "offline-assets")}`
+        const replaced = p.replace("{{LOCAL_ASSETS}}", "offline-assets")
+        const v = encodeURIComponent(replaced)
+        return `${getServerBaseUrl()}/${replaced}?v=${v}`
     }
 
     return `${getServerBaseUrl()}/assets/${p}`

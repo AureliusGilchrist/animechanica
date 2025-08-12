@@ -25,7 +25,7 @@ import { Switch } from "@/components/ui/switch"
 import { StaticTabs } from "@/components/ui/tabs"
 import { TextInput } from "@/components/ui/text-input"
 import { useDebounce } from "@/hooks/use-debounce"
-import { COLLECTION_SORTING_OPTIONS } from "@/lib/helpers/filtering"
+import { ANIME_COLLECTION_SORTING_OPTIONS, MANGA_COLLECTION_SORTING_OPTIONS } from "@/lib/helpers/filtering"
 import { getYear } from "date-fns"
 import { atom } from "jotai/index"
 import { useAtom, useAtomValue, useSetAtom } from "jotai/react"
@@ -91,6 +91,7 @@ export function AnilistCollectionLists() {
                             isCurrent: pageType === "manga",
                             onClick: () => setPageType("manga"),
                         }],
+                        { name: "Profile", isCurrent: false, onClick: () => { window.location.href = "/profile" } },
                         ...[!serverStatus?.user?.isSimulated && {
                             name: "Stats",
                             isCurrent: pageType === "stats",
@@ -289,7 +290,7 @@ export function SearchOptions({
                     className="w-full"
                     fieldClass="flex items-center"
                     inputContainerClass="w-full"
-                    options={COLLECTION_SORTING_OPTIONS}
+                    options={pageType === "anime" ? ANIME_COLLECTION_SORTING_OPTIONS : MANGA_COLLECTION_SORTING_OPTIONS}
                     value={params.sorting || "SCORE_DESC"}
                     onValueChange={v => setParams(draft => {
                         draft.sorting = v as any

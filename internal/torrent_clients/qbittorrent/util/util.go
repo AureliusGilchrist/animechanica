@@ -47,6 +47,37 @@ func GetInto(client *http.Client, target interface{}, url string, body interface
 	return nil
 }
 
+// PostIntoWithContentType performs a POST request with the given content type and decodes the JSON response into target.
+func PostIntoWithContentType(client *http.Client, url string, body io.Reader, contentType string, target interface{}) (err error) {
+    r, err := http.NewRequest("POST", url, body)
+    if err != nil {
+        return err
+    }
+    r.Header.Add("content-type", contentType)
+    resp, err := client.Do(r)
+    if err != nil {
+        return err
+    }
+    defer func() {
+        if err2 := resp.Body.Close(); err2 != nil {
+            err = err2
+        }
+    }()
+    if resp.StatusCode != http.StatusOK {
+        return fmt.Errorf("invalid response status %s", resp.Status)
+    }
+    buf, err := io.ReadAll(resp.Body)
+    if err != nil {
+        return err
+    }
+    if err := json.NewDecoder(bytes.NewReader(buf)).Decode(target); err != nil {
+        if err2 := json.NewDecoder(strings.NewReader("\"" + string(buf) + "\"")).Decode(target); err2 != nil {
+            return err
+        }
+    }
+    return nil
+}
+
 func Post(client *http.Client, url string, body interface{}) (err error) {
 	var buffer bytes.Buffer
 	if err := json.NewEncoder(&buffer).Encode(body); err != nil {

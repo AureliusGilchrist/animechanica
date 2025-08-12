@@ -15,7 +15,12 @@ import (
 	"seanime/internal/util/result"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
+	"unicode"
+
+	"regexp"
 
 	"github.com/5rahim/habari"
 	"github.com/samber/lo"
@@ -27,9 +32,53 @@ const (
 	AnimeSearchTypeSimple AnimeSearchType = "simple"
 )
 
+// Global limiter to respect AnimeTosho rate limits across the entire process.
+// About 1 request every 1300ms per process; conservative and provider-friendly.
+var (
+	animeToshoLimiterOnce sync.Once
+	animeToshoLimiterTick <-chan time.Time
+)
+
+func waitAnimeToshoSlotRepo() {
+	animeToshoLimiterOnce.Do(func() {
+		animeToshoLimiterTick = time.Tick(1300 * time.Millisecond)
+	})
+	<-animeToshoLimiterTick
+}
+
+// sanitizeQueryString reduces punctuation/symbol noise while preserving words.
+// It converts any non-letter/number to spaces, collapses whitespace, and trims.
+// Examples: "!NVADE SHOW!" -> "NVADE SHOW"; "\"Title...\"" -> "Title".
+func sanitizeQueryString(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	prevSpace := false
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			b.WriteRune(r)
+			prevSpace = false
+			continue
+		}
+		// Treat everything else as a separator
+		if !prevSpace {
+			b.WriteRune(' ')
+			prevSpace = true
+		}
+	}
+	cleaned := strings.Join(strings.Fields(b.String()), " ")
+	return cleaned
+}
+
 var (
 	metadataCache = result.NewResultMap[string, *TorrentMetadata]()
 )
+
+// sXXeXX pattern: exclude episodic torrents like S01E02, case-insensitive
+var sxxexxRe = regexp.MustCompile(`(?i)\bS\d{1,2}E\d{1,2}\b`)
 
 type (
 	AnimeSearchType string
@@ -160,9 +209,17 @@ func (r *Repository) SearchAnime(ctx context.Context, opts AnimeSearchOptions) (
 		default:
 		}
 
+		if opts.Provider == ProviderAnimeTosho {
+			waitAnimeToshoSlotRepo()
+		}
+		// Sanitize the query to avoid provider issues with punctuation/symbols (e.g., quotes, !, …)
+		queryForProvider := opts.Query
+		if opts.Provider == ProviderAnimeTosho {
+			queryForProvider = sanitizeQueryString(opts.Query)
+		}
 		torrents, err = providerExtension.GetProvider().SmartSearch(hibiketorrent.AnimeSmartSearchOptions{
 			Media:         queryMedia,
-			Query:         opts.Query,
+			Query:         queryForProvider,
 			Batch:         opts.Batch,
 			EpisodeNumber: opts.EpisodeNumber,
 			Resolution:    opts.Resolution,
@@ -194,6 +251,9 @@ func (r *Repository) SearchAnime(ctx context.Context, opts AnimeSearchOptions) (
 		default:
 		}
 
+		if opts.Provider == ProviderAnimeTosho {
+			waitAnimeToshoSlotRepo()
+		}
 		torrents, err = providerExtension.GetProvider().Search(hibiketorrent.AnimeSearchOptions{
 			Media: queryMedia,
 			Query: opts.Query,
@@ -202,6 +262,14 @@ func (r *Repository) SearchAnime(ctx context.Context, opts AnimeSearchOptions) (
 	if err != nil {
 		return nil, err
 	}
+
+	// Exclude episodic torrents that contain SXXEXX in the name
+	torrents = lo.Filter(torrents, func(t *hibiketorrent.AnimeTorrent, _ int) bool {
+		if t == nil {
+			return false
+		}
+		return !sxxexxRe.MatchString(t.Name)
+	})
 
 	//
 	// Torrent metadata

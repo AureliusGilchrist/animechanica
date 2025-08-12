@@ -284,9 +284,16 @@ func (h *Handler) HandleAnilistListAnime(c echo.Context) error {
 		return h.RespondWithError(c, err)
 	}
 
-	if p.Page == nil || p.PerPage == nil {
-		*p.Page = 1
-		*p.PerPage = 20
+	var page, perPage int
+	if p.Page != nil {
+		page = *p.Page
+	} else {
+		page = 1
+	}
+	if p.PerPage != nil {
+		perPage = *p.PerPage
+	} else {
+		perPage = 20
 	}
 
 	isAdult := false
@@ -295,9 +302,9 @@ func (h *Handler) HandleAnilistListAnime(c echo.Context) error {
 	}
 
 	cacheKey := anilist.ListAnimeCacheKey(
-		p.Page,
+		&page,
 		p.Search,
-		p.PerPage,
+		&perPage,
 		p.Sort,
 		p.Status,
 		p.Genres,
@@ -314,9 +321,9 @@ func (h *Handler) HandleAnilistListAnime(c echo.Context) error {
 	}
 
 	ret, err := anilist.ListAnimeM(
-		p.Page,
+		&page,
 		p.Search,
-		p.PerPage,
+		&perPage,
 		p.Sort,
 		p.Status,
 		p.Genres,

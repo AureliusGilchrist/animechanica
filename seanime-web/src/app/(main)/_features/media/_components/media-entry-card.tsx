@@ -33,6 +33,7 @@ import { useAnilistUserAnimeListData } from "@/app/(main)/_hooks/anilist-collect
 import { useMissingEpisodes } from "@/app/(main)/_hooks/missing-episodes-loader"
 import { useServerStatus } from "@/app/(main)/_hooks/use-server-status"
 import { MangaEntryCardUnreadBadge } from "@/app/(main)/manga/_containers/manga-entry-card-unread-badge"
+import { MangaEntryCardChapterCountBadge } from "@/app/(main)/manga/_containers/manga-entry-card-chapter-count-badge"
 import { SeaLink } from "@/components/shared/sea-link"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -306,6 +307,14 @@ export function MediaEntryCard<T extends "anime" | "manga">(props: MediaEntryCar
                 showLibraryBadge={showLibraryBadge}
                 blurAdultContent={serverStatus?.settings?.anilist?.blurAdultContent}
             >
+                {type === "manga" && (
+                    <div
+                        data-manga-entry-card-body-chapter-count-container
+                        className="absolute z-[11] right-0 top-0"
+                    >
+                        <MangaEntryCardChapterCountBadge mediaId={media.id} progressTotal={progressTotal as any} />
+                    </div>
+                )}
                 <div data-media-entry-card-body-progress-badge-container className="absolute z-[10] left-0 bottom-0 flex items-end">
                     <MediaEntryProgressBadge
                         progress={listData?.progress}

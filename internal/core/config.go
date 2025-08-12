@@ -45,6 +45,9 @@ type Config struct {
 		DownloadDir string
 		LocalDir    string
 	}
+	Anime struct {
+		DownloadDir string
+	}
 	Data struct { // Hydrated after config is loaded
 		AppDataDir string
 		WorkingDir string
@@ -121,6 +124,7 @@ func NewConfig(options *ConfigOptions, logger *zerolog.Logger) (*Config, error) 
 	viper.SetDefault("cache.transcodeDir", "/aeternae/library/manga/seanime/cache/transcode")
 	viper.SetDefault("manga.downloadDir", "/aeternae/library/manga/seanime")
 	viper.SetDefault("manga.localDir", "/aeternae/library/manga/seanime")
+	viper.SetDefault("anime.downloadDir", "/aeternae/theater/anime/completed")
 	viper.SetDefault("logs.dir", "/aeternae/library/manga/seanime/logs")
 	viper.SetDefault("offline.dir", "/aeternae/library/manga/seanime/offline")
 	viper.SetDefault("offline.assetDir", "/aeternae/library/manga/seanime/offline/assets")
@@ -296,6 +300,13 @@ func validateConfig(cfg *Config, logger *zerolog.Logger) error {
 		return wrapInvalidConfigValue("manga.localDir", err)
 	}
 
+	if cfg.Anime.DownloadDir == "" {
+		return errInvalidConfigValue("anime.downloadDir", "cannot be empty")
+	}
+	if err := checkIsValidPath(cfg.Anime.DownloadDir); err != nil {
+		return wrapInvalidConfigValue("anime.downloadDir", err)
+	}
+
 	if cfg.Extensions.Dir == "" {
 		return errInvalidConfigValue("extensions.dir", "cannot be empty")
 	}
@@ -358,6 +369,7 @@ func expandEnvironmentValues(cfg *Config) {
 	cfg.Logs.Dir = filepath.FromSlash(os.ExpandEnv(cfg.Logs.Dir))
 	cfg.Manga.DownloadDir = filepath.FromSlash(os.ExpandEnv(cfg.Manga.DownloadDir))
 	cfg.Manga.LocalDir = filepath.FromSlash(os.ExpandEnv(cfg.Manga.LocalDir))
+	cfg.Anime.DownloadDir = filepath.FromSlash(os.ExpandEnv(cfg.Anime.DownloadDir))
 	cfg.Offline.Dir = filepath.FromSlash(os.ExpandEnv(cfg.Offline.Dir))
 	cfg.Offline.AssetDir = filepath.FromSlash(os.ExpandEnv(cfg.Offline.AssetDir))
 	cfg.Extensions.Dir = filepath.FromSlash(os.ExpandEnv(cfg.Extensions.Dir))

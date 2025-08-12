@@ -1,19 +1,24 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
+	hibiketorrent "seanime/internal/extension/hibike/torrent"
 	"seanime/internal/torrent_clients/torrent_client"
+	"seanime/internal/torrents/torrent"
 
 	"github.com/labstack/echo/v4"
 )
+
+// note: provider-level rate limiting is applied in torrent repository
 
 // Temporary structures for anime batch downloader until full integration
 type AnimeOfflineEntry struct {
@@ -24,6 +29,58 @@ type AnimeOfflineEntry struct {
 	Synonyms []string `json:"synonyms"`
 	Year     int      `json:"year"`
 	Tags     []string `json:"tags"`
+}
+
+// snapshotJob creates a safe, read-only copy of the job for JSON responses.
+// It copies slices/maps to avoid concurrent mutation during marshal.
+func snapshotJob(src *BatchDownloadJob) *BatchDownloadJob {
+	if src == nil {
+		return nil
+	}
+	dst := &BatchDownloadJob{}
+	src.mu.RLock()
+	defer src.mu.RUnlock()
+
+	// Shallow copy simple fields
+	dst.ID = src.ID
+	dst.Status = src.Status
+	dst.Progress = src.Progress
+	dst.TotalAnime = src.TotalAnime
+	dst.CompletedAnime = src.CompletedAnime
+	dst.FailedAnime = src.FailedAnime
+	dst.ActiveBatches = src.ActiveBatches
+	dst.StartTime = src.StartTime
+	if src.EndTime != nil {
+		t := *src.EndTime
+		dst.EndTime = &t
+	}
+	dst.Settings = src.Settings
+
+	// Copy Errors slice
+	if len(src.Errors) > 0 {
+		dst.Errors = make([]string, len(src.Errors))
+		copy(dst.Errors, src.Errors)
+	}
+
+	// Copy Logs slice
+	if len(src.Logs) > 0 {
+		dst.Logs = make([]DownloadLogEntry, len(src.Logs))
+		copy(dst.Logs, src.Logs)
+	}
+
+	// Copy CurrentAnime
+	if src.CurrentAnime != nil {
+		ca := *src.CurrentAnime
+		dst.CurrentAnime = &ca
+	}
+
+	// Copy Statistics
+	if src.Statistics != nil {
+		st := *src.Statistics
+		dst.Statistics = &st
+	}
+
+	return dst
 }
 
 // DownloadLogEntry captures per-anime attempts and failures
@@ -321,22 +378,16 @@ func (h *Handler) processAnime(job *BatchDownloadJob, anime AnimeOfflineEntry) {
 		return
 	}
 
-	// Build destination folder under manga download dir: /anime/<title>
-	destRoot := filepath.Join(h.App.Config.Manga.DownloadDir, "anime")
+	// Build destination folder under anime download dir
+	// The torrent client will create subdirectories based on the torrent content
+	destRoot := h.App.Config.Anime.DownloadDir
 	_ = os.MkdirAll(destRoot, 0o755)
-	sanitize := func(s string) string {
-		s = strings.ReplaceAll(s, "/", "-")
-		s = strings.ReplaceAll(s, "\\", "-")
-		s = strings.TrimSpace(s)
-		if s == "" {
-			s = "untitled"
-		}
-		return s
-	}
-	dest := filepath.Join(destRoot, sanitize(anime.Title))
-	_ = os.MkdirAll(dest, 0o755)
 
-	// Construct search query with batch bias
+	// Use the root anime download directory as destination
+	// The torrent client will extract files into this directory
+	dest := destRoot
+
+	// Construct search query and media for AnimeTosho direct provider search
 	parts := []string{anime.Title, "batch"}
 	if job.Settings.PreferBluray {
 		parts = append(parts, "bluray", "bd")
@@ -344,32 +395,225 @@ func (h *Handler) processAnime(job *BatchDownloadJob, anime AnimeOfflineEntry) {
 	if job.Settings.PreferDualAudio {
 		parts = append(parts, "dual audio")
 	}
-	// Do not constrain resolution in the query when PreferHighestRes is enabled; the
-	// selection logic will pick the highest resolution available (e.g., 2160p > 1080p).
 	query := strings.Join(parts, " ")
 
-	// Search best batch magnet and add to qBittorrent
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	defer cancel()
-	magnet, err := h.App.TorrentClientRepository.SearchBestMagnet(ctx, query, nil, nil, job.Settings.MinSeeders)
-	if err != nil || magnet == "" {
+	// Prepare media with cleaned synonyms
+	cleanedSyns := cleanSynonyms(anime.Synonyms, anime.Title)
+	media := hibiketorrent.Media{
+		RomajiTitle:  anime.Title,
+		EnglishTitle: nil,
+		EpisodeCount: anime.Episodes,
+		Format:       strings.ToLower(anime.Type), // best-effort mapping
+		Synonyms:     cleanedSyns,
+	}
+
+	// Build and log OR-name array (base title + cleaned synonyms), deduped case-insensitively
+	buildOrNames := func(base string, syns []string) []string {
+		merged := make([]string, 0, 1+len(syns))
+		merged = append(merged, base)
+		merged = append(merged, syns...)
+		seen := make(map[string]struct{}, len(merged))
+		out := make([]string, 0, len(merged))
+		for _, s := range merged {
+			v := strings.TrimSpace(s)
+			if v == "" {
+				continue
+			}
+			l := strings.ToLower(v)
+			if _, ok := seen[l]; ok {
+				continue
+			}
+			seen[l] = struct{}{}
+			out = append(out, v)
+		}
+		return out
+	}
+	orNames := buildOrNames(anime.Title, cleanedSyns)
+	if b, err := json.Marshal(orNames); err == nil {
+		job.mu.Lock()
+		job.Logs = append(job.Logs, DownloadLogEntry{
+			AnimeTitle: anime.Title,
+			Query:      query,
+			Status:     "info",
+			Message:    fmt.Sprintf("OR names: %s", string(b)),
+			Time:       time.Now(),
+		})
+		job.mu.Unlock()
+		h.emitJobUpdate(job)
+	}
+
+	// Get AnimeTosho provider from torrent repository
+	providerExt, ok := h.App.TorrentRepository.GetAnimeProviderExtension(torrent.ProviderAnimeTosho)
+	if !ok {
 		job.mu.Lock()
 		job.FailedAnime++
-		job.Errors = append(job.Errors, fmt.Sprintf("No batch torrent found for: %s (%v)", anime.Title, err))
+		job.Errors = append(job.Errors, fmt.Sprintf("AnimeTosho provider not available for: %s", anime.Title))
 		job.Logs = append(job.Logs, DownloadLogEntry{
 			AnimeTitle: anime.Title,
 			Query:      query,
 			Status:     "failed",
-			Message:    fmt.Sprintf("search failed: %v", err),
+			Message:    "provider not available",
 			Time:       time.Now(),
 		})
 		job.mu.Unlock()
+		h.emitJobUpdate(job)
 		return
 	}
+
+	// Prefer batch smart search first with rate limiting and retries
+	var torrents []*hibiketorrent.AnimeTorrent
+	var err error
+	// For movies/single-episode, do not force batch searches
+	wantBatch := anime.Episodes > 1 && !strings.EqualFold(anime.Type, "movie")
+	for attempt := 0; attempt < 3; attempt++ {
+		torrents, err = providerExt.GetProvider().SmartSearch(hibiketorrent.AnimeSmartSearchOptions{
+			Media:      media,
+			Query:      query,
+			Batch:      wantBatch,
+			Resolution: "",
+		})
+		if err == nil && len(torrents) > 0 {
+			break
+		}
+		// Exponential backoff between attempts
+		time.Sleep(time.Duration(400*(attempt+1)) * time.Millisecond)
+	}
+	if len(torrents) == 0 {
+		// Fallback to simple search with pacing and retries
+		for attempt := 0; attempt < 2; attempt++ {
+			var res []*hibiketorrent.AnimeTorrent
+			res, err = providerExt.GetProvider().Search(hibiketorrent.AnimeSearchOptions{Media: media, Query: query})
+			if err == nil && len(res) > 0 {
+				torrents = res
+				break
+			}
+			time.Sleep(time.Duration(400*(attempt+1)) * time.Millisecond)
+		}
+	}
+
+	if len(torrents) == 0 {
+		// Provide a clear reason instead of showing <nil>
+		reason := "no results"
+		if err != nil {
+			reason = err.Error()
+		}
+
+		job.mu.Lock()
+		job.FailedAnime++
+		job.Errors = append(job.Errors, fmt.Sprintf("No torrents found on AnimeTosho for: %s (%s)", anime.Title, reason))
+		job.Logs = append(job.Logs, DownloadLogEntry{
+			AnimeTitle: anime.Title,
+			Query:      query,
+			Status:     "failed",
+			Message:    fmt.Sprintf("search failed: %s", reason),
+			Time:       time.Now(),
+		})
+		job.mu.Unlock()
+		h.emitJobUpdate(job)
+		return
+	}
+
+	// Select best torrent using biased scoring
+	best, candidates := selectBestAnimeToshoTorrent(torrents, job.Settings.MinSeeders)
+	if best == nil {
+		// Build detailed message showing top 5 rejected candidates
+		var candidateDetails []string
+		rejectedCount := 0
+		for _, c := range candidates {
+			if c.Reason != "qualified" {
+				rejectedCount++
+			}
+		}
+
+		// Sort candidates by score descending, then by seeders
+		sort.Slice(candidates, func(i, j int) bool {
+			if candidates[i].Score != candidates[j].Score {
+				return candidates[i].Score > candidates[j].Score
+			}
+			return candidates[i].Torrent.Seeders > candidates[j].Torrent.Seeders
+		})
+
+		// Show top 5 candidates with details
+		for i, c := range candidates {
+			if i >= 5 {
+				break
+			}
+			features := []string{}
+			if c.HasBatch {
+				features = append(features, "Batch")
+			}
+			if c.HasDual {
+				features = append(features, "Dual")
+			}
+			if c.HasRes {
+				features = append(features, "HD")
+			}
+			if c.HasBD {
+				features = append(features, "BD")
+			}
+
+			featureStr := strings.Join(features, "+")
+			if featureStr == "" {
+				featureStr = "None"
+			}
+
+			candidateDetails = append(candidateDetails, fmt.Sprintf(
+				"%s (%.1f%%, %d seeds, %s) - %s",
+				c.Torrent.Name,
+				c.MatchPct,
+				c.Torrent.Seeders,
+				featureStr,
+				c.Reason,
+			))
+		}
+
+		message := fmt.Sprintf("no candidate met threshold (%d rejected)", rejectedCount)
+		if len(candidateDetails) > 0 {
+			message += ":\n" + strings.Join(candidateDetails, "\n")
+		}
+
+		job.mu.Lock()
+		job.FailedAnime++
+		job.Errors = append(job.Errors, fmt.Sprintf("No suitable torrent candidate met threshold for: %s (%d candidates)", anime.Title, len(candidates)))
+		job.Logs = append(job.Logs, DownloadLogEntry{
+			AnimeTitle: anime.Title,
+			Query:      query,
+			Status:     "failed",
+			Message:    message,
+			Time:       time.Now(),
+		})
+		job.mu.Unlock()
+		h.emitJobUpdate(job)
+		return
+	}
+
+	magnet := best.MagnetLink
+	if magnet == "" {
+		// Try provider method if not set
+		if m, e := providerExt.GetProvider().GetTorrentMagnetLink(best); e == nil {
+			magnet = m
+		}
+	}
+	if magnet == "" {
+		job.mu.Lock()
+		job.FailedAnime++
+		job.Errors = append(job.Errors, fmt.Sprintf("Failed to resolve magnet for: %s", anime.Title))
+		job.Logs = append(job.Logs, DownloadLogEntry{
+			AnimeTitle: anime.Title,
+			Query:      query,
+			Status:     "failed",
+			Message:    "empty magnet link",
+			Time:       time.Now(),
+		})
+		job.mu.Unlock()
+		h.emitJobUpdate(job)
+		return
+	}
+
 	if err := h.App.TorrentClientRepository.AddMagnets([]string{magnet}, dest); err != nil {
 		job.mu.Lock()
 		job.FailedAnime++
-		job.Errors = append(job.Errors, fmt.Sprintf("Failed to add torrent for: %s (%v)", anime.Title, err))
+		job.Errors = append(job.Errors, fmt.Sprintf("Failed to add magnet for: %s (%v)", anime.Title, err))
 		job.Logs = append(job.Logs, DownloadLogEntry{
 			AnimeTitle: anime.Title,
 			Query:      query,
@@ -378,8 +622,21 @@ func (h *Handler) processAnime(job *BatchDownloadJob, anime AnimeOfflineEntry) {
 			Time:       time.Now(),
 		})
 		job.mu.Unlock()
+		h.emitJobUpdate(job)
 		return
 	}
+
+	// Success log after adding magnet
+	job.mu.Lock()
+	job.Logs = append(job.Logs, DownloadLogEntry{
+		AnimeTitle: anime.Title,
+		Query:      query,
+		Status:     "success",
+		Message:    "magnet added to client",
+		Time:       time.Now(),
+	})
+	job.mu.Unlock()
+	h.emitJobUpdate(job)
 
 	// Success: update stats
 	job.mu.Lock()
@@ -410,6 +667,297 @@ func (h *Handler) processAnime(job *BatchDownloadJob, anime AnimeOfflineEntry) {
 	job.mu.Unlock()
 }
 
+// TorrentCandidate holds information about a torrent candidate and why it was rejected
+type TorrentCandidate struct {
+	Torrent  *hibiketorrent.AnimeTorrent
+	Score    int
+	MatchPct float64
+	Reason   string
+	HasBatch bool
+	HasDual  bool
+	HasRes   bool
+	HasBD    bool
+}
+
+// selectBestAnimeToshoTorrent applies biased scoring over AnimeTosho results.
+// Bias: Batch > Dual Audio > Resolution > BD. A candidate must meet minSeeders and >=50% match across features,
+// unless it is batch (always allowed). Tie-breakers: resolution, seeders, size.
+func selectBestAnimeToshoTorrent(ts []*hibiketorrent.AnimeTorrent, minSeeders int) (*hibiketorrent.AnimeTorrent, []TorrentCandidate) {
+	bestIdx := -1
+	bestScore := -1
+	var bestRes int
+	var bestSeed int
+	var bestSize int64
+	var candidates []TorrentCandidate
+
+	for i, t := range ts {
+		if t == nil {
+			continue
+		}
+
+		title := t.Name
+		hasBatch := t.IsBatch || t.IsBestRelease || isBatchTitleLite(title)
+		dual := dualAudioScoreLite(title) > 0
+		res := resolutionScoreLite(title)
+		bd := blurayScoreLite(title)
+
+		matches := 0
+		if hasBatch {
+			matches++
+		}
+		if dual {
+			matches++
+		}
+		if res > 0 {
+			matches++
+		}
+		if bd > 0 {
+			matches++
+		}
+
+		matchPct := float64(matches) / 4.0 * 100
+
+		candidate := TorrentCandidate{
+			Torrent:  t,
+			MatchPct: matchPct,
+			HasBatch: hasBatch,
+			HasDual:  dual,
+			HasRes:   res > 0,
+			HasBD:    bd > 0,
+		}
+
+		if t.Seeders < minSeeders {
+			candidate.Reason = fmt.Sprintf("too few seeders (%d < %d)", t.Seeders, minSeeders)
+			candidates = append(candidates, candidate)
+			continue
+		}
+
+		if !hasBatch && matchPct < 50.0 {
+			candidate.Reason = fmt.Sprintf("quality too low (%.1f%% < 50%%)", matchPct)
+			candidates = append(candidates, candidate)
+			continue
+		}
+
+		score := 0
+		if hasBatch {
+			score += 100
+		}
+		if dual {
+			score += 50
+		}
+		if res > 0 {
+			score += 20 + res
+		}
+		if bd > 0 {
+			score += 10 + bd
+		}
+
+		candidate.Score = score
+		candidate.Reason = "qualified"
+		candidates = append(candidates, candidate)
+
+		size := int64(t.Size)
+		if score > bestScore ||
+			(score == bestScore && res > bestRes) ||
+			(score == bestScore && res == bestRes && t.Seeders > bestSeed) ||
+			(score == bestScore && res == bestRes && t.Seeders == bestSeed && size > bestSize) {
+			bestScore = score
+			bestIdx = i
+			bestRes = res
+			bestSeed = t.Seeders
+			bestSize = size
+		}
+	}
+
+	if bestIdx < 0 {
+		return nil, candidates
+	}
+	return ts[bestIdx], candidates
+}
+
+// Lightweight helpers (duplicated from torrent_client scoring logic)
+func isBatchTitleLite(title string) bool {
+	t := strings.ToLower(strings.TrimSpace(title))
+	if t == "" {
+		return false
+	}
+	if strings.Contains(t, "complete") || strings.Contains(t, "batch") || strings.Contains(t, "全集") || strings.Contains(t, "全巻") {
+		return true
+	}
+	// simple range check like 1-12
+	if strings.Contains(t, "-") && (strings.Contains(t, "1-") || strings.Contains(t, "01-")) {
+		return true
+	}
+	// Season tag like S1
+	if strings.Contains(t, " s1") || strings.Contains(t, " s2") || strings.Contains(t, " s3") {
+		return true
+	}
+	// Heuristic: if provider flagged batch
+	return false
+}
+
+func resolutionScoreLite(title string) int {
+	t := strings.ToLower(title)
+	if strings.Contains(t, "2160p") || strings.Contains(t, "4k") {
+		return 4
+	}
+	if strings.Contains(t, "1080p") {
+		return 3
+	}
+	if strings.Contains(t, "720p") {
+		return 2
+	}
+	if strings.Contains(t, "480p") || strings.Contains(t, "576p") {
+		return 1
+	}
+	return 0
+}
+
+func dualAudioScoreLite(title string) int {
+	t := strings.ToLower(title)
+	if strings.Contains(t, "dual audio") || strings.Contains(t, "dual-audio") || strings.Contains(t, "dual") {
+		return 1
+	}
+	return 0
+}
+
+func blurayScoreLite(title string) int {
+	t := strings.ToLower(title)
+	if strings.Contains(t, "bluray") || strings.Contains(t, "bd") || strings.Contains(t, "bdrip") {
+		return 1
+	}
+	return 0
+}
+
+// cleanSynonyms trims, deduplicates, removes empties and title duplicates, and limits list length
+func cleanSynonyms(in []string, title string) []string {
+	// Generate variations including symbol-removed versions and collapse spaces.
+	// Cap to avoid overly long provider queries.
+	const capMax = 12
+
+	seen := make(map[string]struct{}, len(in)+4)
+	out := make([]string, 0, len(in)+4)
+
+	norm := func(s string) string {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return s
+		}
+		// collapse whitespace
+		s = strings.Join(strings.Fields(s), " ")
+		return s
+	}
+
+	stripSymbols := func(s string) string {
+		if s == "" {
+			return s
+		}
+		var b strings.Builder
+		b.Grow(len(s))
+		prevSpace := false
+		for _, r := range s {
+			if unicode.IsLetter(r) || unicode.IsNumber(r) {
+				b.WriteRune(r)
+				prevSpace = false
+				continue
+			}
+			// Treat all other runes as space separators
+			if !prevSpace {
+				b.WriteRune(' ')
+				prevSpace = true
+			}
+		}
+		return norm(b.String())
+	}
+
+	// remove only apostrophes to produce possessive-joined variants: JoJo's -> JoJos
+	removeApostrophes := func(s string) string {
+		if s == "" {
+			return s
+		}
+		s = strings.ReplaceAll(s, "'", "")
+		s = strings.ReplaceAll(s, "’", "")
+		return norm(s)
+	}
+
+	base := norm(title)
+	baseLower := strings.ToLower(base)
+	// Include stripped variant of base title if distinct
+	baseStripped := stripSymbols(base)
+	if baseStripped != "" {
+		l := strings.ToLower(baseStripped)
+		if l != baseLower {
+			if _, ok := seen[l]; !ok {
+				seen[l] = struct{}{}
+				out = append(out, baseStripped)
+			}
+		}
+	}
+
+	// Include apostrophe-removed variant of base title if distinct
+	baseApos := removeApostrophes(base)
+	if baseApos != "" {
+		l := strings.ToLower(baseApos)
+		if l != baseLower {
+			if _, ok := seen[l]; !ok {
+				seen[l] = struct{}{}
+				out = append(out, baseApos)
+			}
+		}
+	}
+
+	// Process input synonyms with their stripped variants
+	for _, s := range in {
+		if len(out) >= capMax {
+			break
+		}
+		v := norm(s)
+		if v == "" {
+			continue
+		}
+		lv := strings.ToLower(v)
+		if lv == baseLower {
+			continue
+		}
+		if _, ok := seen[lv]; !ok {
+			seen[lv] = struct{}{}
+			out = append(out, v)
+		}
+		if len(out) >= capMax {
+			break
+		}
+		sv := stripSymbols(v)
+		if sv != "" {
+			lsv := strings.ToLower(sv)
+			if lsv != baseLower {
+				if _, ok := seen[lsv]; !ok {
+					seen[lsv] = struct{}{}
+					out = append(out, sv)
+				}
+			}
+		}
+		if len(out) >= capMax {
+			break
+		}
+		av := removeApostrophes(v)
+		if av != "" {
+			lav := strings.ToLower(av)
+			if lav != baseLower {
+				if _, ok := seen[lav]; !ok {
+					seen[lav] = struct{}{}
+					out = append(out, av)
+				}
+			}
+		}
+	}
+
+	// Ensure cap
+	if len(out) > capMax {
+		out = out[:capMax]
+	}
+	return out
+}
+
 // emitJobUpdate emits a job update event (mock implementation)
 func (h *Handler) emitJobUpdate(job *BatchDownloadJob) {
 	// In a real implementation, this would emit WebSocket events
@@ -429,7 +977,7 @@ func (h *Handler) emitJobUpdate(job *BatchDownloadJob) {
 func (h *Handler) HandleGetAllAnimeDownloadStatus(c echo.Context) error {
 	// Get the database path and read actual anime count
 	// Database is located in the manga download directory
-	databasePath := filepath.Join("/aeternae/library/manga/seanime", "anime-offline-database-minified.json")
+	databasePath := filepath.Join("/aeternae/theater/anime/completed", "anime-offline-database-minified.json")
 
 	// Get database statistics to show real anime count
 	stats, err := h.getAnimeDatabaseStats(databasePath)
@@ -452,14 +1000,13 @@ func (h *Handler) HandleGetAllAnimeDownloadStatus(c echo.Context) error {
 	activeJob := h.getActiveJob()
 	if activeJob != nil {
 		// Return active job status
-		activeJob.mu.RLock()
-		jobStatus := activeJob.Status
-		jobProgress := activeJob.Progress
-		jobMessage := fmt.Sprintf("Processing %d/%d anime (%.1f%% complete)", activeJob.CompletedAnime, activeJob.TotalAnime, jobProgress)
-		activeJob.mu.RUnlock()
+		snap := snapshotJob(activeJob)
+		jobStatus := snap.Status
+		jobProgress := snap.Progress
+		jobMessage := fmt.Sprintf("Processing %d/%d anime (%.1f%% complete)", snap.CompletedAnime, snap.TotalAnime, jobProgress)
 
 		return h.RespondWithData(c, map[string]interface{}{
-			"job":             activeJob,
+			"job":             snap,
 			"status":          jobStatus,
 			"message":         jobMessage,
 			"totalAnime":      totalAnime,

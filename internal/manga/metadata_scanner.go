@@ -262,9 +262,9 @@ func (ms *MetadataScanner) scanSeries(seriesName, seriesPath string) (*Downloade
 				lastUpdated = chapterData.LastModified
 			}
 
-			// Try to find a cover image from the first chapter if we don't have one yet
+			// Try to find a cover image from the series if we don't have one yet
 			if coverImagePath == "" {
-				absoluteCoverPath := ms.findCoverImage(chapterPath)
+				absoluteCoverPath := ms.findCoverImage(seriesPath)
 				if absoluteCoverPath != "" {
 					// Convert absolute path to relative path from download directory
 					if relPath, err := filepath.Rel(ms.downloadDir, absoluteCoverPath); err == nil {

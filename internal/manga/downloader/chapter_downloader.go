@@ -24,6 +24,7 @@ import (
 	"github.com/rs/zerolog"
 	_ "golang.org/x/image/bmp"  // Register BMP format
 	_ "golang.org/x/image/tiff" // Register Tiff format
+	_ "golang.org/x/image/webp" // Register WebP format
 )
 
 // 📁 /aeternae/library/manga/seanime/

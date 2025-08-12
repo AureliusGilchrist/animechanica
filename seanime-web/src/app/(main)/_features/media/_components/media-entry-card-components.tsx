@@ -124,11 +124,13 @@ export function MediaEntryCardHoverPopup(props: MediaEntryCardHoverPopupProps) {
                 >
                     <Image
                         data-media-entry-card-hover-popup-image
+                        key={coverImage}
                         src={getImageUrl(coverImage || "")}
                         alt={"cover image"}
                         fill
                         placeholder={imageShimmer(700, 475)}
                         quality={100}
+                        unoptimized={getImageUrl(coverImage || "").includes("/offline-assets")}
                     sizes="20rem"
                     className="object-cover object-center transition opacity-20"
                 />
@@ -382,11 +384,13 @@ export function MediaEntryCardBody(props: MediaEntryCardBodyProps) {
 
                     <Image
                         data-media-entry-card-body-image
+                        key={bannerImage}
                         src={getImageUrl(bannerImage || "")}
                         alt={""}
                         fill
                         placeholder={imageShimmer(700, 475)}
                         quality={100}
+                        unoptimized={getImageUrl(bannerImage || "").includes("/offline-assets")}
                         sizes="20rem"
                         className={cn(
                             "object-cover object-center transition-transform",

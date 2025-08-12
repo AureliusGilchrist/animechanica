@@ -51,11 +51,20 @@ type NewClientOptions struct {
 }
 
 func NewClient(opts *NewClientOptions) *Client {
-	baseURL := fmt.Sprintf("http://%s:%d/api/v2", opts.Host, opts.Port)
+	// Normalize optional base path (for reverse proxies like /qbittorrent)
+	normPath := strings.TrimSpace(opts.Path)
+	if normPath != "" {
+		if !strings.HasPrefix(normPath, "/") {
+			normPath = "/" + normPath
+		}
+		normPath = strings.TrimSuffix(normPath, "/")
+	}
+
+	baseURL := fmt.Sprintf("http://%s:%d%s/api/v2", opts.Host, opts.Port, normPath)
 
 	if strings.HasPrefix(opts.Host, "https://") {
 		opts.Host = strings.TrimPrefix(opts.Host, "https://")
-		baseURL = fmt.Sprintf("https://%s:%d/api/v2", opts.Host, opts.Port)
+		baseURL = fmt.Sprintf("https://%s:%d%s/api/v2", opts.Host, opts.Port, normPath)
 	}
 
 	client := &http.Client{}

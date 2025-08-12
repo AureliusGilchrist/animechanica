@@ -72,7 +72,7 @@ func (sm *SessionManager) CreateSession(sessionID, token, username string, viewe
 		Username:  username,
 		Viewer:    viewer,
 		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(7 * 24 * time.Hour), // 1 week
+		ExpiresAt: time.Now().Add(365 * 24 * time.Hour), // 1 year
 	}
 
 	sm.sessions[sessionID] = session
@@ -133,7 +133,7 @@ func (sm *SessionManager) UpdateSession(sessionID string, token, username string
 	session.Token = token
 	session.Username = username
 	session.Viewer = viewer
-	session.ExpiresAt = time.Now().Add(7 * 24 * time.Hour) // Extend expiration
+	session.ExpiresAt = time.Now().Add(365 * 24 * time.Hour) // Extend expiration
 
 	// Save to disk
 	if err := sm.saveSessionFile(session); err != nil {
