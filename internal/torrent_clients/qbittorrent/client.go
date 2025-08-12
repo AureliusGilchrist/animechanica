@@ -2,6 +2,7 @@ package qbittorrent
 
 import (
 	"fmt"
+	"github.com/rs/zerolog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -13,8 +14,6 @@ import (
 	"seanime/internal/torrent_clients/qbittorrent/torrent"
 	"seanime/internal/torrent_clients/qbittorrent/transfer"
 	"strings"
-
-	"github.com/rs/zerolog"
 
 	"golang.org/x/net/publicsuffix"
 )

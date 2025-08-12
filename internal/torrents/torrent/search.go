@@ -277,25 +277,14 @@ func (r *Repository) SearchAnime(ctx context.Context, opts AnimeSearchOptions) (
 		}
 	}
 
-	// Sort torrents by popularity (DownloadCount) first, then by seeders (both descending)
+	// sort both by seeders
 	slices.SortFunc(torrents, func(i, j *hibiketorrent.AnimeTorrent) int {
-		// Primary sort: by download count (popularity) - descending
-		if i.DownloadCount != j.DownloadCount {
-			return cmp.Compare(j.DownloadCount, i.DownloadCount)
-		}
-		// Secondary sort: by seeders - descending
 		return cmp.Compare(j.Seeders, i.Seeders)
 	})
 	previews = lo.Filter(previews, func(p *Preview, _ int) bool {
 		return p != nil && p.Torrent != nil
 	})
-	// Sort previews by popularity (DownloadCount) first, then by seeders (both descending)
 	slices.SortFunc(previews, func(i, j *Preview) int {
-		// Primary sort: by download count (popularity) - descending
-		if i.Torrent.DownloadCount != j.Torrent.DownloadCount {
-			return cmp.Compare(j.Torrent.DownloadCount, i.Torrent.DownloadCount)
-		}
-		// Secondary sort: by seeders - descending
 		return cmp.Compare(j.Torrent.Seeders, i.Torrent.Seeders)
 	})
 

@@ -61,7 +61,6 @@ type (
 		ChapterNumber string `json:"chapterNumber"`
 		SeriesTitle   string `json:"seriesTitle"`
 		ChapterTitle  string `json:"chapterTitle"`
-		CoverImageUrl string `json:"coverImageUrl,omitempty"` // Cover image URL from search results
 	}
 
 	//+-------------------------------------------------------------------------------------------------------------------+

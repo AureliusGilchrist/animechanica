@@ -115,7 +115,7 @@ func (r *Repository) GetMangaPageContainer(
 
 	var chapterContainer *ChapterContainer
 	if found, _ := r.fileCacher.Get(containerBucket, chapterContainerKey, &chapterContainer); !found {
-		r.logger.Error().Int("mediaId", mediaId).Str("provider", provider).Msg("manga: Chapter Container not found")
+		r.logger.Error().Msg("manga: Chapter Container not found")
 		return nil, ErrNoChapters
 	}
 
@@ -238,4 +238,3 @@ func (r *Repository) getPageDimensions(enabled bool, provider string, mediaId in
 
 	return pageDimensions, nil
 }
-

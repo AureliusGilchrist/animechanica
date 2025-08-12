@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"seanime/internal/api/anilist"
 	"seanime/internal/extension"
-	"seanime/internal/local"
 	"seanime/internal/manga"
 	manga_providers "seanime/internal/manga/providers"
-	"seanime/internal/util/filecache"
 	"seanime/internal/util/result"
 	"sort"
 	"strconv"
@@ -336,18 +333,6 @@ func (h *Handler) HandleGetMangaEntryPages(c echo.Context) error {
 	var b body
 	if err := c.Bind(&b); err != nil {
 		return h.RespondWithError(c, err)
-	}
-
-	// For synthetic IDs (En Masse Downloader), ensure chapter container exists before trying to get pages
-	if b.MediaId >= 1000000 && b.MediaId <= 9999999 && b.Provider == manga_providers.LocalProvider {
-		h.App.Logger.Debug().Int("mediaId", b.MediaId).Msg("manga: Ensuring synthetic chapter container exists for pages request")
-		
-		// Create/ensure synthetic chapter container exists in cache
-		_, err := h.createSyntheticChapterContainer(b.MediaId, b.Provider)
-		if err != nil {
-			h.App.Logger.Error().Err(err).Msg("manga: Failed to create synthetic chapter container for pages request")
-			// Continue anyway, let GetMangaPageContainer handle the error
-		}
 	}
 
 	container, err := h.App.MangaRepository.GetMangaPageContainer(b.Provider, b.MediaId, b.ChapterId, b.DoublePage, h.App.IsOffline())
@@ -762,20 +747,23 @@ func (h *Handler) createSyntheticMangaEntry(syntheticID int) (*manga.Entry, erro
 			CoverImage: &anilist.BaseManga_CoverImage{
 				Large: func() *string {
 					if targetSeries.CoverImagePath != "" {
-						// Use Seanime's database API system for cover images
-						return local.FormatAssetUrl(syntheticID, filepath.Base(targetSeries.CoverImagePath))
+						// Format cover image path as API endpoint URL
+						coverURL := fmt.Sprintf("/api/v1/manga/local-page/%s", url.QueryEscape(targetSeries.CoverImagePath))
+						return &coverURL
 					}
 					return nil
 				}(),
 				ExtraLarge: func() *string {
 					if targetSeries.CoverImagePath != "" {
-						return local.FormatAssetUrl(syntheticID, filepath.Base(targetSeries.CoverImagePath))
+						coverURL := fmt.Sprintf("/api/v1/manga/local-page/%s", url.QueryEscape(targetSeries.CoverImagePath))
+						return &coverURL
 					}
 					return nil
 				}(),
 				Medium: func() *string {
 					if targetSeries.CoverImagePath != "" {
-						return local.FormatAssetUrl(syntheticID, filepath.Base(targetSeries.CoverImagePath))
+						coverURL := fmt.Sprintf("/api/v1/manga/local-page/%s", url.QueryEscape(targetSeries.CoverImagePath))
+						return &coverURL
 					}
 					return nil
 				}(),
@@ -875,19 +863,15 @@ func (h *Handler) createSyntheticChapterContainer(syntheticID int, provider stri
 	// Create chapter container from downloaded chapters
 	chapters := make([]*hibikemanga.ChapterDetails, 0, len(targetSeries.Chapters))
 	for _, chapter := range targetSeries.Chapters {
-		// Convert absolute chapter path to relative path for local provider
-		// chapter.ChapterPath is absolute: "/aeternae/library/manga/seanime/#Killstagram/0 - Chapter 0"
-		// We need relative: "#Killstagram/0 - Chapter 0"
-		downloadDir := h.App.Config.Manga.DownloadDir
-		chapterID := strings.TrimPrefix(chapter.ChapterPath, downloadDir)
-		chapterID = strings.TrimPrefix(chapterID, "/") // Remove leading slash if present
+		// Create proper chapter ID for local provider
+		chapterID := fmt.Sprintf("%d_%s", syntheticID, chapter.ChapterNumber)
 
 		chapterDetails := &hibikemanga.ChapterDetails{
-			ID:       chapterID,           // Use relative path as ID (e.g., "#Killstagram/0 - Chapter 0")
+			ID:       chapterID,
 			Title:    chapter.ChapterTitle,
 			Chapter:  chapter.ChapterNumber,
-			Provider: manga_providers.LocalProvider, // Force local provider for downloaded chapters
-			URL:      "",                  // URL not needed for local provider
+			Provider: "local",             // Force local provider for downloaded chapters
+			URL:      chapter.ChapterPath, // Use chapter path as URL for local provider
 			Index:    0,                   // Will be set by container
 		}
 		chapters = append(chapters, chapterDetails)
@@ -895,7 +879,7 @@ func (h *Handler) createSyntheticChapterContainer(syntheticID int, provider stri
 
 	// Create the chapter container
 	container := &manga.ChapterContainer{
-		Provider: manga_providers.LocalProvider, // Force local provider
+		Provider: "local", // Force local provider
 		MediaId:  syntheticID,
 		Chapters: chapters,
 	}
@@ -905,47 +889,5 @@ func (h *Handler) createSyntheticChapterContainer(syntheticID int, provider stri
 		chapter.Index = uint(i)
 	}
 
-	// Store the chapter container in the file cache so it can be found later
-	// Use the same bucket format as the retrieval system: manga_{provider}_chapters_{mediaId}
-	chapterContainerKey := fmt.Sprintf("%s$%d", manga_providers.LocalProvider, syntheticID)
-	containerBucket := filecache.NewBucket(fmt.Sprintf("manga_%s_chapters_%d", manga_providers.LocalProvider, syntheticID), time.Hour*24*7)
-	
-	// Store in cache with 7-day expiration (same as regular manga system)
-	err = h.App.FileCacher.Set(containerBucket, chapterContainerKey, container)
-	if err != nil {
-		h.App.Logger.Error().Err(err).Msg("Failed to store synthetic chapter container in cache")
-	} else {
-		h.App.Logger.Debug().Str("key", chapterContainerKey).Str("bucket", containerBucket.Name()).Msg("Successfully stored synthetic chapter container in cache")
-	}
-
 	return container, nil
-}
-
-// HandleMigrateMangaToSyntheticIDs migrates existing downloaded manga from AniList IDs to synthetic IDs
-// This ensures compatibility with the local provider system for all downloaded manga
-func (h *Handler) HandleMigrateMangaToSyntheticIDs(c echo.Context) error {
-
-	// Get the metadata scanner from the manga downloader
-	metadataScanner := h.App.MangaDownloader.GetMetadataScanner()
-	if metadataScanner == nil {
-		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
-			"error": "Metadata scanner not available",
-		})
-	}
-
-	// Perform the migration
-	err := metadataScanner.MigrateToSyntheticIDs()
-	if err != nil {
-		h.App.Logger.Error().Err(err).Msg("Failed to migrate manga to synthetic IDs")
-		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
-			"error": fmt.Sprintf("Failed to migrate manga to synthetic IDs: %v", err),
-		})
-	}
-
-	h.App.Logger.Info().Msg("Successfully migrated existing downloaded manga to synthetic IDs")
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"success": true,
-		"message": "Successfully migrated existing downloaded manga to synthetic IDs",
-	})
 }

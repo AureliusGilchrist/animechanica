@@ -103,7 +103,7 @@ func LoadExtensions(extensionRepository *extension_repo.Repository, logger *zero
 		Author:      "Seanime",
 		Lang:        "multi",
 		Icon:        "https://raw.githubusercontent.com/5rahim/hibike/main/icons/local-manga.png",
-	}, manga_providers.NewLocal(config.Manga.DownloadDir, logger))
+	}, manga_providers.NewLocal(config.Manga.LocalDir, logger))
 
 	//
 	// Built-in online stream providers

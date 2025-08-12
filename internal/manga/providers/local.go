@@ -7,7 +7,6 @@ import (
 
 	// "image/jpeg"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	hibikemanga "seanime/internal/extension/hibike/manga"
@@ -383,10 +382,6 @@ func cleanChapter(ch string) string {
 
 // FindChapterPages will extract the images
 func (p *Local) FindChapterPages(id string) (ret []*hibikemanga.ChapterPage, err error) {
-	// Protect against concurrent map access with mutex
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	
 	if p.dir == "" {
 		return make([]*hibikemanga.ChapterPage, 0), nil
 	}
@@ -551,21 +546,11 @@ func (p *Local) ReadPage(path string) (ret io.ReadCloser, err error) {
 	// e.g. path = "/series/chapter_1.cbz/image_1.jpg" or "Gachiakuta/1 - Unknown/01.jpeg"
 	p.logger.Debug().Str("path", path).Str("dir", p.dir).Msg("local provider: ReadPage called")
 
-	// URL decode the path to handle encoded characters like + for spaces
-	decodedPath, err := url.QueryUnescape(path)
-	if err != nil {
-		// If decoding fails, use original path
-		decodedPath = path
-		p.logger.Debug().Err(err).Str("originalPath", path).Msg("local provider: Failed to decode path, using original")
-	} else {
-		p.logger.Debug().Str("originalPath", path).Str("decodedPath", decodedPath).Msg("local provider: Successfully decoded path")
-	}
-
 	// If the pages are already in memory, return them (for compressed files)
 	if len(p.currentPages) > 0 {
-		page, ok := p.currentPages[strings.ToLower(filepath.Base(decodedPath))]
+		page, ok := p.currentPages[strings.ToLower(filepath.Base(path))]
 		if ok {
-			p.logger.Debug().Str("path", decodedPath).Msg("local provider: Found page in memory")
+			p.logger.Debug().Str("path", path).Msg("local provider: Found page in memory")
 			return io.NopCloser(bytes.NewReader(page.buf)), nil // Return the page
 		}
 	}
@@ -573,9 +558,9 @@ func (p *Local) ReadPage(path string) (ret io.ReadCloser, err error) {
 	// For downloaded manga: try to read the file directly from disk
 	// Try multiple possible paths to handle both local manga and downloaded manga
 	possiblePaths := []string{
-		filepath.Join(p.dir, decodedPath),                    // Direct path: /dir/Gachiakuta/1 - Unknown/01.jpeg
-		filepath.Join(filepath.Dir(p.dir), decodedPath),      // Parent directory: /parent/Gachiakuta/1 - Unknown/01.jpeg (for when p.dir ends with /local)
-		filepath.Join(p.dir, "local", decodedPath),           // Local subdirectory: /dir/local/Gachiakuta/1 - Unknown/01.jpeg
+		filepath.Join(p.dir, path),                    // Direct path: /dir/Gachiakuta/1 - Unknown/01.jpeg
+		filepath.Join(filepath.Dir(p.dir), path),      // Parent directory: /parent/Gachiakuta/1 - Unknown/01.jpeg (for when p.dir ends with /local)
+		filepath.Join(p.dir, "local", path),           // Local subdirectory: /dir/local/Gachiakuta/1 - Unknown/01.jpeg
 	}
 	
 	for _, fullPath := range possiblePaths {
@@ -593,6 +578,6 @@ func (p *Local) ReadPage(path string) (ret io.ReadCloser, err error) {
 		}
 	}
 
-	p.logger.Error().Str("path", decodedPath).Msg("local provider: Page not found in any possible location")
-	return nil, fmt.Errorf("page not found: %s (tried multiple paths)", decodedPath)
+	p.logger.Error().Str("path", path).Msg("local provider: Page not found in any possible location")
+	return nil, fmt.Errorf("page not found: %s (tried multiple paths)", path)
 }
