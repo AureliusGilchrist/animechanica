@@ -11,6 +11,8 @@ type (
 		DataDir          string
 		Update           bool
 		IsDesktopSidecar bool
+		PprofEnabled     bool
+		PprofAddr        string
 	}
 )
 
@@ -24,6 +26,10 @@ func GetSeanimeFlags() SeanimeFlags {
 		fmt.Printf("   directory that contains all Seanime data\n")
 		fmt.Printf("  -update")
 		fmt.Printf("   update the application\n")
+		fmt.Printf("  -pprof\n")
+		fmt.Printf("   enable pprof profiling server (listens on -pprof-addr)\n")
+		fmt.Printf("  -pprof-addr string\n")
+		fmt.Printf("   address for pprof server (default 127.0.0.1:6060)\n")
 		fmt.Printf("  -h                           show this help message\n")
 	}
 	// Parse flags
@@ -33,11 +39,17 @@ func GetSeanimeFlags() SeanimeFlags {
 	flag.BoolVar(&update, "update", false, "Update the application")
 	var isDesktopSidecar bool
 	flag.BoolVar(&isDesktopSidecar, "desktop-sidecar", false, "Run as the desktop sidecar")
+	var pprofEnabled bool
+	flag.BoolVar(&pprofEnabled, "pprof", false, "Enable pprof profiling server")
+	var pprofAddr string
+	flag.StringVar(&pprofAddr, "pprof-addr", "127.0.0.1:6060", "Address for pprof server")
 	flag.Parse()
 
 	return SeanimeFlags{
 		DataDir:          strings.TrimSpace(dataDir),
 		Update:           update,
 		IsDesktopSidecar: isDesktopSidecar,
+		PprofEnabled:     pprofEnabled,
+		PprofAddr:        strings.TrimSpace(pprofAddr),
 	}
 }

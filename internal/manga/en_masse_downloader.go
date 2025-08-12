@@ -1,6 +1,7 @@
 package manga
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -126,13 +127,32 @@ func (emd *EnMasseDownloader) saveProgress(processedSeriesIDs []string) error {
 		LastUpdated:        time.Now(),
 	}
 
-	data, err := json.MarshalIndent(progress, "", "  ")
+	// Atomic write with buffered JSON encoder (no indent for performance)
+	tmp := emd.progressFilePath + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to marshal progress: %w", err)
+		return fmt.Errorf("failed to open temp progress file: %w", err)
 	}
-
-	if err := os.WriteFile(emd.progressFilePath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write progress file: %w", err)
+	bufw := bufio.NewWriterSize(f, 32*1024)
+	enc := json.NewEncoder(bufw)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(progress); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to encode progress: %w", err)
+	}
+	if err := bufw.Flush(); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to flush progress: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to fsync progress: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("failed to close temp progress file: %w", err)
+	}
+	if err := os.Rename(tmp, emd.progressFilePath); err != nil {
+		return fmt.Errorf("failed to rename temp progress file: %w", err)
 	}
 
 	emd.logger.Debug().Str("progressFile", emd.progressFilePath).Int("processedSeries", emd.processedSeries).Msg("en_masse_downloader: Saved progress")
@@ -145,13 +165,37 @@ func (emd *EnMasseDownloader) setRunningState(running bool) {
 		Running:     running,
 		LastUpdated: time.Now(),
 	}
-	data, err := json.MarshalIndent(state, "", "  ")
+	// Atomic write with buffered JSON encoder
+	tmp := emd.runningStateFilePath + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
-		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to marshal running state")
+		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to open temp running state file")
 		return
 	}
-	if err := os.WriteFile(emd.runningStateFilePath, data, 0644); err != nil {
-		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to write running state file")
+	bufw := bufio.NewWriterSize(f, 8*1024)
+	enc := json.NewEncoder(bufw)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(state); err != nil {
+		_ = f.Close()
+		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to encode running state")
+		return
+	}
+	if err := bufw.Flush(); err != nil {
+		_ = f.Close()
+		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to flush running state")
+		return
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to fsync running state")
+		return
+	}
+	if err := f.Close(); err != nil {
+		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to close temp running state file")
+		return
+	}
+	if err := os.Rename(tmp, emd.runningStateFilePath); err != nil {
+		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to rename temp running state file")
 		return
 	}
 	emd.logger.Debug().Str("stateFile", emd.runningStateFilePath).Bool("running", running).Msg("en_masse_downloader: Saved running state")
@@ -159,12 +203,14 @@ func (emd *EnMasseDownloader) setRunningState(running bool) {
 
 // WasRunning returns true if the previous process indicated it was running
 func (emd *EnMasseDownloader) WasRunning() bool {
-	data, err := os.ReadFile(emd.runningStateFilePath)
+	f, err := os.Open(emd.runningStateFilePath)
 	if err != nil {
 		return false
 	}
+	defer f.Close()
+	dec := json.NewDecoder(f)
 	var state enMasseDownloaderRunningState
-	if err := json.Unmarshal(data, &state); err != nil {
+	if err := dec.Decode(&state); err != nil {
 		return false
 	}
 	return state.Running
@@ -176,14 +222,15 @@ func (emd *EnMasseDownloader) loadProgress() (*EnMasseDownloaderProgress, error)
 		return nil, nil // No progress file exists
 	}
 
-	data, err := os.ReadFile(emd.progressFilePath)
+	f, err := os.Open(emd.progressFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read progress file: %w", err)
+		return nil, fmt.Errorf("failed to open progress file: %w", err)
 	}
-
+	defer f.Close()
+	dec := json.NewDecoder(bufio.NewReaderSize(f, 16*1024))
 	var progress EnMasseDownloaderProgress
-	if err := json.Unmarshal(data, &progress); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal progress: %w", err)
+	if err := dec.Decode(&progress); err != nil {
+		return nil, fmt.Errorf("failed to decode progress: %w", err)
 	}
 
 	emd.logger.Debug().Str("progressFile", emd.progressFilePath).Int("processedSeries", progress.ProcessedSeries).Msg("en_masse_downloader: Loaded progress")
@@ -350,13 +397,10 @@ func (emd *EnMasseDownloader) loadCatalogue() ([]WeebCentralCatalogueEntry, erro
 	}
 	defer file.Close()
 
-	data, err := io.ReadAll(file)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read catalogue file: %w", err)
-	}
-
+	// Stream decode to reduce peak memory
+	dec := json.NewDecoder(bufio.NewReaderSize(file, 64*1024))
 	var catalogue []WeebCentralCatalogueEntry
-	if err := json.Unmarshal(data, &catalogue); err != nil {
+	if err := dec.Decode(&catalogue); err != nil {
 		return nil, fmt.Errorf("failed to parse catalogue JSON: %w", err)
 	}
 

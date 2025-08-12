@@ -4,6 +4,8 @@ import (
 	"embed"
 	"fmt"
 	golog "log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"seanime/internal/core"
@@ -66,6 +68,17 @@ func startApp(embeddedLogo []byte) (*core.App, core.SeanimeFlags, *updater.SelfU
 
 func startAppLoop(webFS *embed.FS, app *core.App, flags core.SeanimeFlags, selfupdater *updater.SelfUpdater) {
 	updateMode := flags.Update
+
+	// Optionally start pprof server on a separate goroutine when enabled
+	if flags.PprofEnabled {
+		addr := flags.PprofAddr
+		go func() {
+			log.Log().Str("addr", addr).Msg("pprof: starting profiling server")
+			if err := http.ListenAndServe(addr, nil); err != nil {
+				log.Log().Err(err).Str("addr", addr).Msg("pprof: profiling server exited")
+			}
+		}()
+	}
 
 appLoop:
 	for {
