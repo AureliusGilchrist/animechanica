@@ -19,6 +19,19 @@ import {
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
+// Minimal type for expanded viewer payload returned by backend
+export type AL_ViewerFull = {
+    Viewer: {
+        name: string
+        avatar?: { large?: string; medium?: string } | null
+        bannerImage?: string | null
+        isBlocked?: boolean | null
+        options?: { displayAdultContent?: boolean; airingNotifications?: boolean; profileColor?: string } | null
+        about?: string | null
+        siteUrl?: string | null
+    }
+}
+
 export function useGetAnimeCollection() {
     return useServerQuery<AL_AnimeCollection>({
         endpoint: API_ENDPOINTS.ANILIST.GetAnimeCollection.endpoint,
@@ -147,6 +160,15 @@ export function useGetAniListStats(enabled: boolean = true) {
         endpoint: API_ENDPOINTS.ANILIST.GetAniListStats.endpoint,
         method: API_ENDPOINTS.ANILIST.GetAniListStats.methods[0],
         queryKey: [API_ENDPOINTS.ANILIST.GetAniListStats.key],
+        enabled: enabled,
+    })
+}
+
+export function useGetAnilistViewer(enabled: boolean = true) {
+    return useServerQuery<AL_ViewerFull>({
+        endpoint: API_ENDPOINTS.ANILIST.GetAnilistViewer.endpoint,
+        method: API_ENDPOINTS.ANILIST.GetAnilistViewer.methods[0],
+        queryKey: [API_ENDPOINTS.ANILIST.GetAnilistViewer.key],
         enabled: enabled,
     })
 }

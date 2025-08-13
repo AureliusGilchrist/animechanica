@@ -17,6 +17,10 @@ import {
     __animeEntryUnmatchFilesModalIsOpenAtom,
     AnimeEntryUnmatchFilesModal,
 } from "@/app/(main)/entry/_containers/entry-actions/anime-entry-unmatch-files-modal"
+import {
+    __animeEntryMatchFilesModalIsOpenAtom,
+    AnimeEntryMatchFilesModal,
+} from "@/app/(main)/entry/_containers/entry-actions/anime-entry-match-files-modal"
 import { IconButton } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { openTab } from "@/lib/helpers/browser"
@@ -41,6 +45,7 @@ export function AnimeEntryDropdownMenu({ entry }: { entry: Anime_Entry }) {
 
     const setBulkDeleteFilesModalOpen = useSetAtom(__bulkDeleteFilesModalIsOpenAtom)
     const setAnimeEntryUnmatchFilesModalOpen = useSetAtom(__animeEntryUnmatchFilesModalIsOpenAtom)
+    const setAnimeEntryMatchFilesModalOpen = useSetAtom(__animeEntryMatchFilesModalIsOpenAtom)
     const setDownloadFilesModalOpen = useSetAtom(__animeEntryDownloadFilesModalIsOpenAtom)
 
     return (
@@ -95,6 +100,13 @@ export function AnimeEntryDropdownMenu({ entry }: { entry: Anime_Entry }) {
                         <span className="flex items-center gap-2"><FiDownload className="text-lg" /> Download some files</span> <BiRightArrowAlt />
                     </DropdownMenuItem>
                     <DropdownMenuItem
+                        className="text-green-600 dark:text-green-300 flex justify-between"
+                        onClick={() => setAnimeEntryMatchFilesModalOpen(true)}
+                    >
+                        <span className="flex items-center gap-2"><BiRightArrowAlt className="rotate-180" /> Match some files</span>
+                        <BiRightArrowAlt />
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
                         className="text-orange-500 dark:text-orange-200 flex justify-between"
                         onClick={() => setAnimeEntryUnmatchFilesModalOpen(true)}
                     >
@@ -117,6 +129,7 @@ export function AnimeEntryDropdownMenu({ entry }: { entry: Anime_Entry }) {
             <AnimeEntryMetadataManager entry={entry} />
             <AnimeEntryBulkDeleteFilesModal entry={entry} />
             <AnimeEntryUnmatchFilesModal entry={entry} />
+            <AnimeEntryMatchFilesModal entry={entry} />
 
         </>
     )

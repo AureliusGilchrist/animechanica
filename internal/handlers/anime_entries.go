@@ -275,7 +275,18 @@ func (h *Handler) HandleFetchAnimeEntrySuggestions(c echo.Context) error {
 		return item.MediaId == 0
 	})
 
+	// If nothing left after filtering, return empty suggestions to avoid panic
+	if len(selectedLfs) == 0 {
+		entriesSuggestionsCache.Set(b.Dir, []*anilist.BaseAnime{})
+		return h.RespondWithData(c, []*anilist.BaseAnime{})
+	}
+
+	// Get a safe parsed title from the first unmatched file
 	title := selectedLfs[0].GetParsedTitle()
+	if strings.TrimSpace(title) == "" {
+		entriesSuggestionsCache.Set(b.Dir, []*anilist.BaseAnime{})
+		return h.RespondWithData(c, []*anilist.BaseAnime{})
+	}
 
 	h.App.Logger.Info().Str("title", title).Msg("handlers: Fetching anime suggestions")
 

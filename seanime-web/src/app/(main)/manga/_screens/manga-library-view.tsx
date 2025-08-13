@@ -34,6 +34,77 @@ type MangaLibraryViewProps = {
     hasManga: boolean
 }
 
+// Reusable paginated grid for media entries
+const MemoMediaEntryCard = React.memo(function MemoMediaEntryCard({ media, listData, type }: { media: any, listData: any, type: "manga" | "anime" }) {
+    return (
+        <MediaEntryCard
+            media={media}
+            listData={listData}
+            showListDataButton
+            withAudienceScore={false}
+            type={type}
+        />
+    )
+}, (prev, next) => {
+    // Shallow compare key fields to avoid unnecessary re-renders
+    return prev.media?.id === next.media?.id && prev.type === next.type && prev.listData?.status === next.listData?.status && prev.listData?.progress === next.listData?.progress
+})
+
+function PaginatedMediaGrid({
+    entries,
+    type,
+    pageSize = 20,
+    onEntryHover,
+}: {
+    entries: any[]
+    type: "manga" | "anime"
+    pageSize?: number
+    onEntryHover?: (entry: any) => void
+}) {
+    const [page, setPage] = React.useState(1)
+    const pageCount = Math.max(1, Math.ceil((entries?.length || 0) / pageSize))
+    const start = (page - 1) * pageSize
+    const end = start + pageSize
+    const pageEntries = React.useMemo(() => (entries || []).slice(start, end), [entries, start, end])
+    React.useEffect(() => { setPage(1) }, [entries])
+
+    return (
+        <>
+            <MediaCardLazyGrid itemCount={pageEntries.length}>
+                {pageEntries.map((entry) => (
+                    <div
+                        key={entry.media?.id}
+                        onMouseEnter={() => {
+                            onEntryHover?.(entry)
+                        }}
+                    >
+                        <MemoMediaEntryCard media={entry.media!} listData={entry.listData} type={type} />
+                    </div>
+                ))}
+            </MediaCardLazyGrid>
+            {pageCount > 1 && (
+                <div className="flex items-center justify-center gap-3 pt-2">
+                    <button
+                        className="px-3 py-1 rounded border disabled:opacity-50"
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                    >
+                        Prev
+                    </button>
+                    <span className="text-sm text-[--muted]">Page {page} / {pageCount}</span>
+                    <button
+                        className="px-3 py-1 rounded border disabled:opacity-50"
+                        onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                        disabled={page === pageCount}
+                    >
+                        Next
+                    </button>
+                </div>
+            )}
+        </>
+    )
+}
+
 export function MangaLibraryView(props: MangaLibraryViewProps) {
 
     const {
@@ -130,6 +201,15 @@ export function FilteredCollectionLists({ collectionList, genres }: {
         return collectionList?.lists?.flatMap(n => n.entries).filter(Boolean) ?? []
     }, [collectionList])
 
+    // Pagination for filtered combined list
+    const [page, setPage] = React.useState(1)
+    const pageSize = 20
+    const pageCount = Math.max(1, Math.ceil(entries.length / pageSize))
+    const start = (page - 1) * pageSize
+    const end = start + pageSize
+    const pageEntries = React.useMemo(() => entries.slice(start, end), [entries, start, end])
+    React.useEffect(() => { setPage(1) }, [collectionList])
+
     return (
         <PageWrapper
             className="p-4 space-y-8 relative z-[4]"
@@ -148,8 +228,8 @@ export function FilteredCollectionLists({ collectionList, genres }: {
                 <GenreSelector genres={genres} />
             </div>}
 
-            <MediaCardLazyGrid itemCount={entries?.length || 0}>
-                {entries.map(entry => {
+            <MediaCardLazyGrid itemCount={pageEntries?.length || 0}>
+                {pageEntries.map(entry => {
                     return <div
                         key={entry.media?.id}
                     >
@@ -163,6 +243,28 @@ export function FilteredCollectionLists({ collectionList, genres }: {
                     </div>
                 })}
             </MediaCardLazyGrid>
+
+            {pageCount > 1 && (
+                <div className="flex items-center justify-center gap-3 pt-2">
+                    <button
+                        className="px-3 py-1 rounded border disabled:opacity-50"
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                    >
+                        Prev
+                    </button>
+                    <span className="text-sm text-[--muted]">
+                        Page {page} / {pageCount}
+                    </span>
+                    <button
+                        className="px-3 py-1 rounded border disabled:opacity-50"
+                        onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                        disabled={page === pageCount}
+                    >
+                        Next
+                    </button>
+                </div>
+            )}
         </PageWrapper>
     )
 
@@ -288,28 +390,17 @@ const CollectionListItem = memo(({ list, storedProviders }: { list: Manga_Collec
                 />
             }
 
-            <MediaCardLazyGrid itemCount={list.entries?.length ?? 0}>
-                {list.entries?.map(entry => {
-                    return <div
-                        key={entry.media?.id}
-                        onMouseEnter={() => {
-                            if (list.type === "CURRENT" && entry.media?.bannerImage) {
-                                React.startTransition(() => {
-                                    setCurrentHeaderImage(entry.media?.bannerImage!)
-                                })
-                            }
-                        }}
-                    >
-                        <MediaEntryCard
-                            media={entry.media!}
-                            listData={entry.listData}
-                            showListDataButton
-                            withAudienceScore={false}
-                            type="manga"
-                        />
-                    </div>
-                })}
-            </MediaCardLazyGrid>
+            <PaginatedMediaGrid
+                entries={list.entries || []}
+                type="manga"
+                onEntryHover={(entry) => {
+                    if (list.type === "CURRENT" && entry.media?.bannerImage) {
+                        React.startTransition(() => {
+                            setCurrentHeaderImage(entry.media?.bannerImage!)
+                        })
+                    }
+                }}
+            />
         </React.Fragment>
     )
 })

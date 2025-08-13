@@ -37,6 +37,7 @@ type Status struct {
 	TorrentstreamSettings *models.TorrentstreamSettings `json:"torrentstreamSettings"`
 	DebridSettings        *models.DebridSettings        `json:"debridSettings"`
 	AnilistClientID       string                        `json:"anilistClientId"`
+	AnilistAuthenticated  bool                          `json:"anilistAuthenticated"`
 	Updating              bool                          `json:"updating"`         // If true, a new screen will be displayed
 	IsDesktopSidecar      bool                          `json:"isDesktopSidecar"` // The server is running as a desktop sidecar
 	FeatureFlags          core.FeatureFlags             `json:"featureFlags"`
@@ -89,6 +90,12 @@ func (h *Handler) NewStatus(c echo.Context) *Status {
 
 	theme, _ = h.App.Database.GetTheme()
 
+	// Determine AniList auth from session presence (token in session)
+	hasAnilistAuth := false
+	if dbAcc != nil && dbAcc.Token != "" {
+		hasAnilistAuth = true
+	}
+
 	status := &Status{
 		OS:                    runtime.GOOS,
 		ClientDevice:          clientInfo.Device,
@@ -105,6 +112,7 @@ func (h *Handler) NewStatus(c echo.Context) *Status {
 		TorrentstreamSettings: h.App.SecondarySettings.Torrentstream,
 		DebridSettings:        h.App.SecondarySettings.Debrid,
 		AnilistClientID:       h.App.Config.Anilist.ClientID,
+		AnilistAuthenticated:  hasAnilistAuth,
 		Updating:              false,
 		IsDesktopSidecar:      h.App.IsDesktopSidecar,
 		FeatureFlags:          h.App.FeatureFlags,

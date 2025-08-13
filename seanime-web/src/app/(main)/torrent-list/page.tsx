@@ -78,7 +78,7 @@ function Content() {
         description: "This action will cause seeding to stop for all completed torrents.",
         actionIntent: "warning",
         onConfirm: () => {
-            for (const torrent of data ?? []) {
+            for (const torrent of (data ?? []).filter(t => t.status === "seeding")) {
                 handleTorrentAction({
                     hash: torrent.hash,
                     action: "pause",

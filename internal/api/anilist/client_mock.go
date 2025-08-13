@@ -37,6 +37,12 @@ func (ac *MockAnilistClientImpl) IsAuthenticated() bool {
 	return ac.realAnilistClient.IsAuthenticated()
 }
 
+// ViewerFull returns expanded viewer info. For the mock, we simply delegate to the real client
+// without caching for now, as this is lightweight and primarily used by the profile header.
+func (ac *MockAnilistClientImpl) ViewerFull(ctx context.Context) (*ViewerFull, error) {
+	return ac.realAnilistClient.ViewerFull(ctx)
+}
+
 func (ac *MockAnilistClientImpl) BaseAnimeByMalID(ctx context.Context, id *int, interceptors ...clientv2.RequestInterceptor) (*BaseAnimeByMalID, error) {
 	file, err := os.Open(test_utils.GetTestDataPath("BaseAnimeByMalID"))
 	defer file.Close()

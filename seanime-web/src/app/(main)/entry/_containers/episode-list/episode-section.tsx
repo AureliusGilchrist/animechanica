@@ -17,6 +17,7 @@ import { Carousel, CarouselContent, CarouselDotButtons, CarouselItem } from "@/c
 import { useThemeSettings } from "@/lib/theme/hooks"
 import React from "react"
 import { IoLibrarySharp } from "react-icons/io5"
+import { AnimeEntryFolderIndicator } from "@/app/(main)/entry/_containers/entry-actions/anime-entry-folder-indicator"
 
 type EpisodeSectionProps = {
     entry: Anime_Entry
@@ -122,6 +123,9 @@ export function EpisodeSection({ entry, details, bottomSection }: EpisodeSection
                     intent="alert"
                     description="Some episodes are invalid. Update the metadata to fix this."
                 />}
+
+                {/* Show immediate subfolders under the anime root, if any */}
+                <AnimeEntryFolderIndicator entry={entry} />
 
 
                 {episodesToWatch.length > 0 && (

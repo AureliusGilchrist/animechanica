@@ -50,15 +50,31 @@ func (h *Handler) HandleGetAnimeCollection(c echo.Context) error {
 //	@route /api/v1/anilist/collection/raw [GET,POST]
 func (h *Handler) HandleGetRawAnimeCollection(c echo.Context) error {
 
-	bypassCache := c.Request().Method == "POST"
+	// Prefer per-session token over global platform state to avoid 0-lists when
+	// platform username/client are unset. Return raw lists (no filtering).
+	sessionID, _ := c.Get("Seanime-Client-Id").(string)
+	var token string
+	if s, ok := h.App.SessionManager.GetSession(sessionID); ok {
+		token = s.Token
+	}
+	if token == "" {
+		return h.RespondWithError(c, errors.New("not authenticated"))
+	}
 
-	// Get the user's anilist collection
-	animeCollection, err := h.App.GetRawAnimeCollection(bypassCache)
+	client := anilist.NewAnilistClient(token)
+	// Resolve the viewer's username to query collection explicitly
+	v, err := client.GetViewer(c.Request().Context())
+	if err != nil || v == nil || v.Viewer.Name == "" {
+		return h.RespondWithError(c, fmt.Errorf("failed to resolve viewer name: %w", err))
+	}
+	uname := v.Viewer.Name
+
+	col, err := client.AnimeCollection(c.Request().Context(), &uname)
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
 
-	return h.RespondWithData(c, animeCollection)
+	return h.RespondWithData(c, col)
 }
 
 // HandleEditAnilistListEntry
@@ -180,6 +196,30 @@ func (h *Handler) HandleGetAnilistStudioDetails(c echo.Context) error {
 }
 
 //----------------------------------------------------------------------------------------------------------------------------------------------------
+
+// HandleGetAnilistViewer
+//
+//	@summary returns expanded AniList viewer info (bio, banner, siteUrl, etc.).
+//	@route /api/v1/anilist/viewer [GET]
+//	@returns anilist.ViewerFull
+func (h *Handler) HandleGetAnilistViewer(c echo.Context) error {
+	// Use per-session token for multi-user correctness
+	sessionID, _ := c.Get("Seanime-Client-Id").(string)
+	var token string
+	if s, ok := h.App.SessionManager.GetSession(sessionID); ok {
+		token = s.Token
+	}
+	if token == "" {
+		return h.RespondWithError(c, errors.New("not authenticated"))
+	}
+
+	client := anilist.NewAnilistClient(token)
+	vf, err := client.ViewerFull(c.Request().Context())
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
+	return h.RespondWithData(c, vf)
+}
 
 // HandleDeleteAnilistListEntry
 //
@@ -433,7 +473,7 @@ func (h *Handler) HandleAnilistListMissedSequels(c echo.Context) error {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-var anilistStatsCache = result.NewCache[int, *anilist.Stats]()
+var anilistStatsCache = result.NewCache[string, *anilist.Stats]()
 
 // HandleGetAniListStats
 //
@@ -442,12 +482,24 @@ var anilistStatsCache = result.NewCache[int, *anilist.Stats]()
 //	@route /api/v1/anilist/stats [GET]
 //	@returns anilist.Stats
 func (h *Handler) HandleGetAniListStats(c echo.Context) error {
-	cached, ok := anilistStatsCache.Get(0)
+	// Resolve per-session token and key cache by it to avoid cross-user leakage
+	sessionID, _ := c.Get("Seanime-Client-Id").(string)
+	var token string
+	if s, ok := h.App.SessionManager.GetSession(sessionID); ok {
+		token = s.Token
+	}
+	if token == "" {
+		return h.RespondWithError(c, errors.New("use a real account to get stats"))
+	}
+
+	cached, ok := anilistStatsCache.Get(token)
 	if ok {
 		return h.RespondWithData(c, cached)
 	}
 
-	stats, err := h.App.AnilistPlatform.GetViewerStats(c.Request().Context())
+	// Fetch stats using a token-scoped client to honor per-session auth
+	client := anilist.NewAnilistClient(token)
+	stats, err := client.ViewerStats(c.Request().Context())
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
@@ -460,7 +512,7 @@ func (h *Handler) HandleGetAniListStats(c echo.Context) error {
 		return h.RespondWithError(c, err)
 	}
 
-	anilistStatsCache.SetT(0, ret, time.Hour*1)
+	anilistStatsCache.SetT(token, ret, time.Hour*1)
 
 	return h.RespondWithData(c, ret)
 }

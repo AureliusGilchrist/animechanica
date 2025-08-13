@@ -47,8 +47,49 @@ type AnilistClient interface {
 	ViewerStats(ctx context.Context, interceptors ...clientv2.RequestInterceptor) (*ViewerStats, error)
 	StudioDetails(ctx context.Context, id *int, interceptors ...clientv2.RequestInterceptor) (*StudioDetails, error)
 	GetViewer(ctx context.Context, interceptors ...clientv2.RequestInterceptor) (*GetViewer, error)
+	ViewerFull(ctx context.Context) (*ViewerFull, error)
 	AnimeAiringSchedule(ctx context.Context, ids []*int, season *MediaSeason, seasonYear *int, previousSeason *MediaSeason, previousSeasonYear *int, nextSeason *MediaSeason, nextSeasonYear *int, interceptors ...clientv2.RequestInterceptor) (*AnimeAiringSchedule, error)
 	AnimeAiringScheduleRaw(ctx context.Context, ids []*int, interceptors ...clientv2.RequestInterceptor) (*AnimeAiringScheduleRaw, error)
+}
+
+// ViewerFullDocument queries additional public profile fields plus favourites
+const ViewerFullDocument = `query ViewerFull {
+    Viewer {
+        name
+        avatar { large medium }
+        bannerImage
+        isBlocked
+        options { displayAdultContent airingNotifications profileColor }
+        about
+        siteUrl
+        favourites {
+            anime: anime {
+                nodes { id title { romaji english native } coverImage { large medium extraLarge } }
+            }
+            manga: manga {
+                nodes { id title { romaji english native } coverImage { large medium extraLarge } }
+            }
+            characters: characters {
+                nodes { id name { full native } image { large medium } }
+            }
+            studios: studios {
+                nodes { id name }
+            }
+        }
+    }
+}`
+
+// ViewerFull fetches expanded viewer info including bio (about) and siteUrl
+func (ac *AnilistClientImpl) ViewerFull(ctx context.Context) (*ViewerFull, error) {
+	if !ac.IsAuthenticated() {
+		return nil, ErrNotAuthenticated
+	}
+	var res ViewerFull
+	vars := map[string]any{}
+	if err := ac.Client.Client.Post(ctx, "ViewerFull", ViewerFullDocument, &res, vars); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
 type (
@@ -57,6 +98,69 @@ type (
 		Client *Client
 		logger *zerolog.Logger
 		token  string // The token used for authentication with the AniList API
+	}
+	// ViewerFull is a lightweight struct for an expanded Viewer query
+	ViewerFull struct {
+		Viewer struct {
+			Name        string                    `json:"name"`
+			Avatar      *GetViewer_Viewer_Avatar  `json:"avatar,omitempty"`
+			BannerImage *string                   `json:"bannerImage,omitempty"`
+			IsBlocked   *bool                     `json:"isBlocked,omitempty"`
+			Options     *GetViewer_Viewer_Options `json:"options,omitempty"`
+			About       *string                   `json:"about,omitempty"`
+			SiteURL     *string                   `json:"siteUrl,omitempty"`
+			Favourites  *struct {
+				Anime *struct {
+					Nodes []struct {
+						ID    int `json:"id"`
+						Title *struct {
+							Romaji  *string `json:"romaji,omitempty"`
+							English *string `json:"english,omitempty"`
+							Native  *string `json:"native,omitempty"`
+						} `json:"title,omitempty"`
+						CoverImage *struct {
+							Large      *string `json:"large,omitempty"`
+							Medium     *string `json:"medium,omitempty"`
+							ExtraLarge *string `json:"extraLarge,omitempty"`
+						} `json:"coverImage,omitempty"`
+					} `json:"nodes"`
+				} `json:"anime,omitempty"`
+				Manga *struct {
+					Nodes []struct {
+						ID    int `json:"id"`
+						Title *struct {
+							Romaji  *string `json:"romaji,omitempty"`
+							English *string `json:"english,omitempty"`
+							Native  *string `json:"native,omitempty"`
+						} `json:"title,omitempty"`
+						CoverImage *struct {
+							Large      *string `json:"large,omitempty"`
+							Medium     *string `json:"medium,omitempty"`
+							ExtraLarge *string `json:"extraLarge,omitempty"`
+						} `json:"coverImage,omitempty"`
+					} `json:"nodes"`
+				} `json:"manga,omitempty"`
+				Characters *struct {
+					Nodes []struct {
+						ID   int `json:"id"`
+						Name *struct {
+							Full   *string `json:"full,omitempty"`
+							Native *string `json:"native,omitempty"`
+						} `json:"name,omitempty"`
+						Image *struct {
+							Large  *string `json:"large,omitempty"`
+							Medium *string `json:"medium,omitempty"`
+						} `json:"image,omitempty"`
+					} `json:"nodes"`
+				} `json:"characters,omitempty"`
+				Studios *struct {
+					Nodes []struct {
+						ID   int     `json:"id"`
+						Name *string `json:"name,omitempty"`
+					} `json:"nodes"`
+				} `json:"studios,omitempty"`
+			} `json:"favourites,omitempty"`
+		} `json:"Viewer"`
 	}
 )
 

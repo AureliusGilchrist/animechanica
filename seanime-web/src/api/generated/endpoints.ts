@@ -114,6 +114,15 @@ export const API_ENDPOINTS = {
             methods: ["GET"],
             endpoint: "/api/v1/anilist/stats",
         },
+        /**
+         *  @description
+         *  Route returns expanded viewer info including bio and siteUrl.
+         */
+        GetAnilistViewer: {
+            key: "ANILIST-get-anilist-viewer",
+            methods: ["GET"],
+            endpoint: "/api/v1/anilist/viewer",
+        },
     },
     ANIME: {
         /**

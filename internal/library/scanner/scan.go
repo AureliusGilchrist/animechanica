@@ -3,6 +3,9 @@ package scanner
 import (
 	"context"
 	"errors"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"seanime/internal/api/anilist"
 	"seanime/internal/api/metadata"
 	"seanime/internal/events"
@@ -156,6 +159,45 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 	}
 	_ = hook.GlobalHookManager.OnScanFilePathsRetrieved().Trigger(fpEvent)
 	paths = fpEvent.FilePaths
+
+	// +---------------------+
+	// |  Heuristic filter   |
+	// +---------------------+
+	// Cautiously filter out obvious non-episode files (e.g., OP/ED/NCOP/NCED/extras) when the filename clearly matches
+	// those patterns and does not look like an episode-like filename. This reduces wrong matches during normal scan.
+	// We only do a conservative filename-based check and do NOT remove anything locked/ignored (handled later) or
+	// bypass hooks already applied above.
+	{
+		var (
+			reOPED   = regexp.MustCompile(`(?i)(?:^|[\s._\-])(NC?OP|NC?ED|OP|ED|Creditless|Extras?)(?:[\s._\-]?\d+)?(?:$|[\s._\-])`)
+			reEpisode = regexp.MustCompile(`(?i)(?:^|[^a-zA-Z])\d{1,3}(?:v\d+)?(?:[^a-zA-Z]|$)`)
+		)
+		shouldKeep := func(p string) bool {
+			base := strings.ToLower(filepath.Base(p))
+			// If it clearly has an episode-like number, keep
+			if reEpisode.MatchString(base) {
+				return true
+			}
+			// If it clearly matches OP/ED/Creditless/Extras pattern and not episode-like, drop
+			if reOPED.MatchString(base) {
+				return false
+			}
+			return true
+		}
+		filtered := make([]string, 0, len(paths))
+		for _, p := range paths {
+			if shouldKeep(p) {
+				filtered = append(filtered, p)
+			}
+		}
+		if scn.ScanLogger != nil {
+			scn.ScanLogger.logger.Info().
+				Int("before", len(paths)).
+				Int("after", len(filtered)).
+				Msg("Applied OP/ED/extras filename filter")
+		}
+		paths = filtered
+	}
 
 	// +---------------------+
 	// |    Local files      |

@@ -20,9 +20,24 @@ export function AnilistAnimeEntryList(props: AnilistAnimeEntryListProps) {
         ...rest
     } = props
 
+    // Client-side pagination to reduce render cost
+    const entries = React.useMemo(() => list?.entries?.filter(Boolean) || [], [list?.entries])
+    const [page, setPage] = React.useState(1)
+    const pageSize = 36
+    const pageCount = Math.max(1, Math.ceil(entries.length / pageSize))
+    const start = (page - 1) * pageSize
+    const end = start + pageSize
+    const pageEntries = entries.slice(start, end)
+
+    // Reset page when list changes
+    React.useEffect(() => {
+        setPage(1)
+    }, [list?.entries])
+
     return (
-        <MediaCardLazyGrid itemCount={list?.entries?.filter(Boolean)?.length || 0} data-anilist-anime-entry-list>
-            {list?.entries?.filter(Boolean)?.map((entry) => (
+        <div data-anilist-anime-entry-list className="space-y-4">
+            <MediaCardLazyGrid itemCount={pageEntries.length}>
+                {pageEntries.map((entry) => (
                 <MediaEntryCard
                     key={`${entry.media?.id}`}
                     listData={{
@@ -41,7 +56,30 @@ export function AnilistAnimeEntryList(props: AnilistAnimeEntryListProps) {
                     showListDataButton
                     type={type}
                 />
-            ))}
-        </MediaCardLazyGrid>
+                ))}
+            </MediaCardLazyGrid>
+
+            {pageCount > 1 && (
+                <div className="flex items-center justify-center gap-3 pt-2">
+                    <button
+                        className="px-3 py-1 rounded border disabled:opacity-50"
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                    >
+                        Prev
+                    </button>
+                    <span className="text-sm text-[--muted]">
+                        Page {page} / {pageCount}
+                    </span>
+                    <button
+                        className="px-3 py-1 rounded border disabled:opacity-50"
+                        onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                        disabled={page === pageCount}
+                    >
+                        Next
+                    </button>
+                </div>
+            )}
+        </div>
     )
 }

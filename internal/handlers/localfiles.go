@@ -128,6 +128,14 @@ func (h *Handler) HandleLocalFileBulkAction(c echo.Context) error {
 		for _, lf := range lfs {
 			lf.Locked = false
 		}
+	case "unmatch-all":
+		// Reset all anime-to-AniList links without modifying series data.
+		// This clears MediaId and unlocks/unignores every local file to prepare for rematching.
+		for _, lf := range lfs {
+			lf.MediaId = 0
+			lf.Locked = false
+			lf.Ignored = false
+		}
 	}
 
 	// Save the local files

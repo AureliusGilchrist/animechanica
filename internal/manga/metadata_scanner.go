@@ -264,7 +264,8 @@ func (ms *MetadataScanner) scanSeries(seriesName, seriesPath string) (*Downloade
 
 			// Try to find a cover image from the first chapter if we don't have one yet
 			if coverImagePath == "" {
-				absoluteCoverPath := ms.findCoverImage(chapterPath)
+				// Use the series directory so the finder can inspect all chapters
+				absoluteCoverPath := ms.findCoverImage(seriesPath)
 				if absoluteCoverPath != "" {
 					// Convert absolute path to relative path from download directory
 					if relPath, err := filepath.Rel(ms.downloadDir, absoluteCoverPath); err == nil {
@@ -400,7 +401,7 @@ func (ms *MetadataScanner) findCoverImageInChapterFiles(seriesDir string) string
 		}
 
 		chapterPath := filepath.Join(seriesDir, chapterDir.Name())
-		
+
 		// Check for registry.json first to see if this is a valid chapter
 		registryPath := filepath.Join(chapterPath, "registry.json")
 		if _, err := os.Stat(registryPath); os.IsNotExist(err) {
@@ -417,58 +418,58 @@ func (ms *MetadataScanner) findCoverImageInChapterFiles(seriesDir string) string
 		var coverCandidates []string
 		var imageFiles []string
 
-	// Look for both cover files and collect all images
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
+		// Look for both cover files and collect all images
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
 
-		// Skip registry.json
-		if entry.Name() == "registry.json" {
-			continue
-		}
+			// Skip registry.json
+			if entry.Name() == "registry.json" {
+				continue
+			}
 
-		// Check if it's an image file
-		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp" {
-			fileName := strings.ToLower(entry.Name())
-			fileNameWithoutExt := strings.ToLower(strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name())))
-			imageFiles = append(imageFiles, entry.Name())
+			// Check if it's an image file
+			ext := strings.ToLower(filepath.Ext(entry.Name()))
+			if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp" {
+				fileName := strings.ToLower(entry.Name())
+				fileNameWithoutExt := strings.ToLower(strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name())))
+				imageFiles = append(imageFiles, entry.Name())
 
-			// Look for files that are specifically cover images
-			if strings.Contains(fileName, "cover") ||
-				strings.Contains(fileName, "thumbnail") ||
-				fileNameWithoutExt == "cover" ||
-				fileNameWithoutExt == "thumbnail" ||
-				fileNameWithoutExt == "front" ||
-				fileNameWithoutExt == "poster" ||
-				strings.HasPrefix(fileName, "00") ||
-				strings.HasPrefix(fileName, "01") { // Include first numbered file as potential cover
-				coverCandidates = append(coverCandidates, entry.Name())
-				ms.logger.Debug().Str("coverFile", entry.Name()).Str("chapterPath", chapterPath).Msg("manga metadata scanner: Found potential cover file")
+				// Look for files that are specifically cover images
+				if strings.Contains(fileName, "cover") ||
+					strings.Contains(fileName, "thumbnail") ||
+					fileNameWithoutExt == "cover" ||
+					fileNameWithoutExt == "thumbnail" ||
+					fileNameWithoutExt == "front" ||
+					fileNameWithoutExt == "poster" ||
+					strings.HasPrefix(fileName, "00") ||
+					strings.HasPrefix(fileName, "01") { // Include first numbered file as potential cover
+					coverCandidates = append(coverCandidates, entry.Name())
+					ms.logger.Debug().Str("coverFile", entry.Name()).Str("chapterPath", chapterPath).Msg("manga metadata scanner: Found potential cover file")
+				}
 			}
 		}
-	}
 
-	// Return the best cover candidate (prioritize "cover" in name)
-	if len(coverCandidates) > 0 {
-		// First priority: files with "cover" in the name
-		for _, candidate := range coverCandidates {
-			if strings.Contains(strings.ToLower(candidate), "cover") {
-				ms.logger.Debug().Str("selectedCover", candidate).Str("chapterPath", chapterPath).Msg("manga metadata scanner: Selected cover file")
-				return filepath.Join(chapterPath, candidate)
+		// Return the best cover candidate (prioritize "cover" in name)
+		if len(coverCandidates) > 0 {
+			// First priority: files with "cover" in the name
+			for _, candidate := range coverCandidates {
+				if strings.Contains(strings.ToLower(candidate), "cover") {
+					ms.logger.Debug().Str("selectedCover", candidate).Str("chapterPath", chapterPath).Msg("manga metadata scanner: Selected cover file")
+					return filepath.Join(chapterPath, candidate)
+				}
 			}
+			// Second priority: any other cover candidate
+			ms.logger.Debug().Str("selectedCover", coverCandidates[0]).Str("chapterPath", chapterPath).Msg("manga metadata scanner: Selected first cover candidate")
+			return filepath.Join(chapterPath, coverCandidates[0])
 		}
-		// Second priority: any other cover candidate
-		ms.logger.Debug().Str("selectedCover", coverCandidates[0]).Str("chapterPath", chapterPath).Msg("manga metadata scanner: Selected first cover candidate")
-		return filepath.Join(chapterPath, coverCandidates[0])
-	}
 
-	// Fallback: use first image file if no dedicated cover found
-	if len(imageFiles) > 0 {
-		ms.logger.Debug().Str("fallbackCover", imageFiles[0]).Str("chapterPath", chapterPath).Msg("manga metadata scanner: Using first image as cover fallback")
-		return filepath.Join(chapterPath, imageFiles[0])
-	}
+		// Fallback: use first image file if no dedicated cover found
+		if len(imageFiles) > 0 {
+			ms.logger.Debug().Str("fallbackCover", imageFiles[0]).Str("chapterPath", chapterPath).Msg("manga metadata scanner: Using first image as cover fallback")
+			return filepath.Join(chapterPath, imageFiles[0])
+		}
 
 		// No images found at all
 		ms.logger.Debug().Str("chapterPath", chapterPath).Msg("manga metadata scanner: No images found for cover")

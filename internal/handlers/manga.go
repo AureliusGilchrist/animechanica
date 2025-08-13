@@ -60,16 +60,29 @@ func (h *Handler) HandleGetAnilistMangaCollection(c echo.Context) error {
 //	@route /api/v1/manga/anilist/collection/raw [GET,POST]
 //	@returns anilist.MangaCollection
 func (h *Handler) HandleGetRawAnilistMangaCollection(c echo.Context) error {
+    // Use per-session token to avoid reliance on global platform username/client
+    sessionID, _ := c.Get("Seanime-Client-Id").(string)
+    var token string
+    if s, ok := h.App.SessionManager.GetSession(sessionID); ok {
+        token = s.Token
+    }
+    if token == "" {
+        return h.RespondWithError(c, errors.New("not authenticated"))
+    }
 
-	bypassCache := c.Request().Method == "POST"
+    client := anilist.NewAnilistClient(token)
+    v, err := client.GetViewer(c.Request().Context())
+    if err != nil || v == nil || v.Viewer.Name == "" {
+        return h.RespondWithError(c, fmt.Errorf("failed to resolve viewer name: %w", err))
+    }
+    uname := v.Viewer.Name
 
-	// Get the user's anilist collection
-	mangaCollection, err := h.App.GetRawMangaCollection(bypassCache)
-	if err != nil {
-		return h.RespondWithError(c, err)
-	}
+    col, err := client.MangaCollection(c.Request().Context(), &uname)
+    if err != nil {
+        return h.RespondWithError(c, err)
+    }
 
-	return h.RespondWithData(c, mangaCollection)
+    return h.RespondWithData(c, col)
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -82,7 +82,8 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 				newCookie.Name = "Seanime-Client-Id"
 				newCookie.Value = u
 				newCookie.HttpOnly = false // Make the cookie accessible via JS
-				newCookie.Expires = time.Now().Add(24 * time.Hour)
+				// Extend session duration to one year
+				newCookie.Expires = time.Now().Add(365 * 24 * time.Hour)
 				newCookie.Path = "/"
 				newCookie.Domain = ""
 				newCookie.SameSite = http.SameSiteDefaultMode
@@ -175,6 +176,9 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Anilist.GET("/media-details/:id", h.HandleGetAnilistAnimeDetails)
 
 	v1Anilist.GET("/studio-details/:id", h.HandleGetAnilistStudioDetails)
+
+	// Viewer (expanded)
+	v1Anilist.GET("/viewer", h.HandleGetAnilistViewer)
 
 	v1Anilist.POST("/list-entry", h.HandleEditAnilistListEntry)
 

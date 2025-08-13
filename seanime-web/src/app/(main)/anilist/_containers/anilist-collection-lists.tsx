@@ -27,6 +27,7 @@ import { TextInput } from "@/components/ui/text-input"
 import { useDebounce } from "@/hooks/use-debounce"
 import { COLLECTION_SORTING_OPTIONS } from "@/lib/helpers/filtering"
 import { getYear } from "date-fns"
+import { useRouter } from "next/navigation"
 import { atom } from "jotai/index"
 import { useAtom, useAtomValue, useSetAtom } from "jotai/react"
 import { AnimatePresence } from "motion/react"
@@ -43,6 +44,7 @@ const selectedIndexAtom = atom("-")
 const watchListSearchInputAtom = atom<string>("")
 
 export function AnilistCollectionLists() {
+    const router = useRouter()
     const serverStatus = useServerStatus()
     const [pageType, setPageType] = useAtom(__myLists_selectedTypeAtom)
     const [selectedIndex, setSelectedIndex] = useAtom(selectedIndexAtom)
@@ -59,7 +61,7 @@ export function AnilistCollectionLists() {
         customLists,
     } = useHandleUserAnilistLists(debouncedSearchInput)
 
-    const { data: stats, isLoading: statsLoading } = useGetAniListStats(!!serverStatus?.user && !serverStatus?.user?.isSimulated)
+    const { data: stats, isLoading: statsLoading } = useGetAniListStats(!!serverStatus?.user)
 
     const setParams = useSetAtom(__myListsSearch_paramsAtom)
 
@@ -91,11 +93,16 @@ export function AnilistCollectionLists() {
                             isCurrent: pageType === "manga",
                             onClick: () => setPageType("manga"),
                         }],
-                        ...[!serverStatus?.user?.isSimulated && {
+                        {
+                            name: "Profile",
+                            isCurrent: false,
+                            onClick: () => router.push("/profile"),
+                        },
+                        {
                             name: "Stats",
                             isCurrent: pageType === "stats",
                             onClick: () => setPageType("stats"),
-                        }],
+                        },
                     ].filter(Boolean)}
                 />
             </div>
@@ -153,7 +160,7 @@ export function AnilistCollectionLists() {
                     </div>
                 </PageWrapper>}
 
-                {pageType === "stats" && !serverStatus?.user?.isSimulated && <PageWrapper
+                {pageType === "stats" && <PageWrapper
                     key="stats"
                     className="space-y-6"
                     {...{

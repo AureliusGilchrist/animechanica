@@ -172,35 +172,41 @@ func (m *Matcher) matchLocalFileWithMedia(lf *anime.LocalFile) {
 		// Using Jaccard
 		// Get the matchs for each title variation
 		compResults := lop.Map(titleVariations, func(title *string, _ int) *comparison.JaccardResult {
-			comps := make([]*comparison.JaccardResult, 0)
-			if len(m.MediaContainer.engTitles) > 0 {
-				if eng, found := comparison.FindBestMatchWithJaccard(title, m.MediaContainer.engTitles); found {
-					comps = append(comps, eng)
+			var eng, rom, syn *comparison.JaccardResult
+			if len(m.MediaContainer.romTitles) > 0 {
+				if r, found := comparison.FindBestMatchWithJaccard(title, m.MediaContainer.romTitles); found {
+					rom = r
 				}
 			}
-			if len(m.MediaContainer.romTitles) > 0 {
-				if rom, found := comparison.FindBestMatchWithJaccard(title, m.MediaContainer.romTitles); found {
-					comps = append(comps, rom)
+			if len(m.MediaContainer.engTitles) > 0 {
+				if e, found := comparison.FindBestMatchWithJaccard(title, m.MediaContainer.engTitles); found {
+					eng = e
 				}
 			}
 			if len(m.MediaContainer.synonyms) > 0 {
-				if syn, found := comparison.FindBestMatchWithJaccard(title, m.MediaContainer.synonyms); found {
-					comps = append(comps, syn)
+				if s, found := comparison.FindBestMatchWithJaccard(title, m.MediaContainer.synonyms); found {
+					syn = s
 				}
 			}
-			var res *comparison.JaccardResult
-			if len(comps) > 1 {
-				res = lo.Reduce(comps, func(prev *comparison.JaccardResult, curr *comparison.JaccardResult, _ int) *comparison.JaccardResult {
-					if prev.Rating > curr.Rating {
-						return prev
-					} else {
-						return curr
-					}
-				}, comps[0])
-			} else if len(comps) == 1 {
-				return comps[0]
+			// Prefer Romaji unless another exceeds by more than epsilon
+			epsilon := 0.02
+			candidate := rom
+			if candidate == nil {
+				// No romaji; use the best available
+				if eng != nil && (syn == nil || eng.Rating >= syn.Rating) {
+					candidate = eng
+				} else {
+					candidate = syn
+				}
+			} else {
+				if eng != nil && eng.Rating > candidate.Rating+epsilon {
+					candidate = eng
+				}
+				if syn != nil && syn.Rating > candidate.Rating+epsilon {
+					candidate = syn
+				}
 			}
-			return res
+			return candidate
 		})
 
 		// Retrieve the match from all the title variations results
@@ -225,35 +231,41 @@ func (m *Matcher) matchLocalFileWithMedia(lf *anime.LocalFile) {
 		// Using Sorensen-Dice
 		// Get the matchs for each title variation
 		compResults := lop.Map(titleVariations, func(title *string, _ int) *comparison.SorensenDiceResult {
-			comps := make([]*comparison.SorensenDiceResult, 0)
-			if len(m.MediaContainer.engTitles) > 0 {
-				if eng, found := comparison.FindBestMatchWithSorensenDice(title, m.MediaContainer.engTitles); found {
-					comps = append(comps, eng)
+			var eng, rom, syn *comparison.SorensenDiceResult
+			if len(m.MediaContainer.romTitles) > 0 {
+				if r, found := comparison.FindBestMatchWithSorensenDice(title, m.MediaContainer.romTitles); found {
+					rom = r
 				}
 			}
-			if len(m.MediaContainer.romTitles) > 0 {
-				if rom, found := comparison.FindBestMatchWithSorensenDice(title, m.MediaContainer.romTitles); found {
-					comps = append(comps, rom)
+			if len(m.MediaContainer.engTitles) > 0 {
+				if e, found := comparison.FindBestMatchWithSorensenDice(title, m.MediaContainer.engTitles); found {
+					eng = e
 				}
 			}
 			if len(m.MediaContainer.synonyms) > 0 {
-				if syn, found := comparison.FindBestMatchWithSorensenDice(title, m.MediaContainer.synonyms); found {
-					comps = append(comps, syn)
+				if s, found := comparison.FindBestMatchWithSorensenDice(title, m.MediaContainer.synonyms); found {
+					syn = s
 				}
 			}
-			var res *comparison.SorensenDiceResult
-			if len(comps) > 1 {
-				res = lo.Reduce(comps, func(prev *comparison.SorensenDiceResult, curr *comparison.SorensenDiceResult, _ int) *comparison.SorensenDiceResult {
-					if prev.Rating > curr.Rating {
-						return prev
-					} else {
-						return curr
-					}
-				}, comps[0])
-			} else if len(comps) == 1 {
-				return comps[0]
+			// Prefer Romaji unless another exceeds by more than epsilon
+			epsilon := 0.02
+			candidate := rom
+			if candidate == nil {
+				// No romaji; use the best available
+				if eng != nil && (syn == nil || eng.Rating >= syn.Rating) {
+					candidate = eng
+				} else {
+					candidate = syn
+				}
+			} else {
+				if eng != nil && eng.Rating > candidate.Rating+epsilon {
+					candidate = eng
+				}
+				if syn != nil && syn.Rating > candidate.Rating+epsilon {
+					candidate = syn
+				}
 			}
-			return res
+			return candidate
 		})
 
 		// Retrieve the match from all the title variations results
@@ -280,35 +292,41 @@ func (m *Matcher) matchLocalFileWithMedia(lf *anime.LocalFile) {
 		// Using Levenshtein
 		// Get the matches for each title variation
 		levCompResults := lop.Map(titleVariations, func(title *string, _ int) *comparison.LevenshteinResult {
-			comps := make([]*comparison.LevenshteinResult, 0)
-			if len(m.MediaContainer.engTitles) > 0 {
-				if eng, found := comparison.FindBestMatchWithLevenshtein(title, m.MediaContainer.engTitles); found {
-					comps = append(comps, eng)
+			var eng, rom, syn *comparison.LevenshteinResult
+			if len(m.MediaContainer.romTitles) > 0 {
+				if r, found := comparison.FindBestMatchWithLevenshtein(title, m.MediaContainer.romTitles); found {
+					rom = r
 				}
 			}
-			if len(m.MediaContainer.romTitles) > 0 {
-				if rom, found := comparison.FindBestMatchWithLevenshtein(title, m.MediaContainer.romTitles); found {
-					comps = append(comps, rom)
+			if len(m.MediaContainer.engTitles) > 0 {
+				if e, found := comparison.FindBestMatchWithLevenshtein(title, m.MediaContainer.engTitles); found {
+					eng = e
 				}
 			}
 			if len(m.MediaContainer.synonyms) > 0 {
-				if syn, found := comparison.FindBestMatchWithLevenshtein(title, m.MediaContainer.synonyms); found {
-					comps = append(comps, syn)
+				if s, found := comparison.FindBestMatchWithLevenshtein(title, m.MediaContainer.synonyms); found {
+					syn = s
 				}
 			}
-			var res *comparison.LevenshteinResult
-			if len(comps) > 1 {
-				res = lo.Reduce(comps, func(prev *comparison.LevenshteinResult, curr *comparison.LevenshteinResult, _ int) *comparison.LevenshteinResult {
-					if prev.Distance < curr.Distance {
-						return prev
-					} else {
-						return curr
-					}
-				}, comps[0])
-			} else if len(comps) == 1 {
-				return comps[0]
+			// For Levenshtein, lower distance is better. Prefer Romaji unless another beats it by more than epsilon.
+			epsilon := 1 // distance margin
+			candidate := rom
+			if candidate == nil {
+				// No romaji; pick the lowest distance among others
+				if eng != nil && (syn == nil || eng.Distance <= syn.Distance) {
+					candidate = eng
+				} else {
+					candidate = syn
+				}
+			} else {
+				if eng != nil && eng.Distance+epsilon < candidate.Distance {
+					candidate = eng
+				}
+				if syn != nil && syn.Distance+epsilon < candidate.Distance {
+					candidate = syn
+				}
 			}
-			return res
+			return candidate
 		})
 
 		levMatch = lo.Reduce(levCompResults, func(prev *comparison.LevenshteinResult, curr *comparison.LevenshteinResult, _ int) *comparison.LevenshteinResult {
