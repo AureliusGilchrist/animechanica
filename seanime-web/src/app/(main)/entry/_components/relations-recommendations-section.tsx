@@ -36,6 +36,41 @@ export function RelationsRecommendationsSection(props: RelationsRecommendationsS
     const recommendations = React.useMemo(() => details?.recommendations?.edges?.map(edge => edge?.node?.mediaRecommendation)?.filter(Boolean) || [],
         [details?.recommendations?.edges])
 
+    // Map of mediaId -> folder exists
+    const [recFolderExists, setRecFolderExists] = React.useState<Record<number, boolean>>({})
+
+    // Fetch folder existence for each recommended anime using backend endpoint
+    React.useEffect(() => {
+        const ids = (recommendations || []).map(m => m!.id).filter(Boolean) as number[]
+        if (!ids.length) {
+            setRecFolderExists({})
+            return
+        }
+        let cancelled = false
+        ;(async () => {
+            try {
+                // Fire requests in parallel with basic throttling
+                const results = await Promise.allSettled(ids.map(async (id) => {
+                    const resp = await fetch(`/api/v1/library/anime-entry/dir-exists/${id}`)
+                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+                    const data = await resp.json() as { exists?: boolean }
+                    return { id, exists: !!data?.exists }
+                }))
+                if (cancelled) return
+                const map: Record<number, boolean> = {}
+                results.forEach(r => {
+                    if (r.status === "fulfilled") {
+                        map[r.value.id] = r.value.exists
+                    }
+                })
+                setRecFolderExists(map)
+            } catch (_) {
+                // fail silently; keep map as-is
+            }
+        })()
+        return () => { cancelled = true }
+    }, [recommendations])
+
     if (!entry || !details) return null
 
     return (
@@ -79,6 +114,7 @@ export function RelationsRecommendationsSection(props: RelationsRecommendationsS
                             <MediaEntryCard
                                 media={media!}
                                 showLibraryBadge
+                                existingFolder={!!recFolderExists[media.id!]}
                                 showTrailer
                                 type="anime"
                             />

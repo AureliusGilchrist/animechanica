@@ -166,11 +166,20 @@ export function ChapterDownloadQueue(props: ChapterDownloadQueueProps) {
                                         )}
                                         >
                                             <div className="flex items-center gap-2">
-                                                {!!media && <SeaLink
-                                                    className="font-semibold max-w-[180px] text-ellipsis truncate underline"
-                                                    href={`/manga/entry?id=${media.id}`}
-                                                >{media.title?.userPreferred}</SeaLink>}
-                                                <p>Chapter {item.chapterNumber} <span className="text-[--muted] italic">(id: {item.chapterId})</span>
+                                                {!!media ? (
+                                                    <SeaLink
+                                                        className="font-semibold max-w-[220px] text-ellipsis truncate underline"
+                                                        href={`/manga/entry?id=${media.id}`}
+                                                    >{media.title?.userPreferred}</SeaLink>
+                                                ) : (
+                                                    <p className="font-semibold max-w-[220px] text-ellipsis truncate">
+                                                        {((item as unknown as { seriesTitle?: string })?.seriesTitle) ?? "Unknown series"}
+                                                    </p>
+                                                )}
+                                                <p>
+                                                    Chapter {item.chapterNumber}
+                                                    {" "}
+                                                    <span className="text-[--muted] italic">(media id: {item.mediaId})</span>
                                                 </p>
                                                 {item.status === "errored" && (
                                                     <div className="flex gap-1 items-center text-[--orange]">

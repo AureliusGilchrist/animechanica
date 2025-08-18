@@ -20,14 +20,108 @@ export function AnilistAnimeEntryList(props: AnilistAnimeEntryListProps) {
         ...rest
     } = props
 
-    // Client-side pagination to reduce render cost
-    const entries = React.useMemo(() => list?.entries?.filter(Boolean) || [], [list?.entries])
+    // Normalize series title (remove season/cour markers, numbers, punctuation noise)
+    const normalizeSeriesTitle = React.useCallback((t?: string | null) => {
+        if (!t) return ""
+        let s = t
+        // Remove common season/cour tags
+        s = s.replace(/\b(season|cour|part)\s*\d+\b/gi, "")
+        // Remove roman numerals or trailing numbers
+        s = s.replace(/\b([ivxlcdm]+)\b/gi, "")
+        s = s.replace(/\d+/g, "")
+        // Collapse extra spaces and trim
+        s = s.replace(/\s{2,}/g, " ").trim()
+        return s.toLowerCase()
+    }, [])
+
+    // Determine a chronological key for entries within the same series
+    const chronologicalKey = React.useCallback((entry: NonNullable<NonNullable<typeof list>['entries']>[number]) => {
+        const m = entry?.media
+        // Prefer start date
+        const y = m?.startDate?.year ?? 9999
+        const mo = m?.startDate?.month ?? 12
+        const d = m?.startDate?.day ?? 31
+        // Fallbacks: episodes count then id
+        const ep = (m as any)?.episodes ?? 99999
+        const id = m?.id ?? 99999999
+        return [y, mo, d, ep, id]
+    }, [list])
+
+    // Group by normalized series title alphabetically; within each group sort chronologically
+    const sortedEntries = React.useMemo(() => {
+        const raw = (list?.entries || []).filter(Boolean)
+        if (!raw.length) return [] as NonNullable<typeof list>['entries']
+
+        const groups = new Map<string, typeof raw>()
+        for (const e of raw) {
+            const title = e?.media?.title?.userPreferred || e?.media?.title?.romaji || e?.media?.title?.english || ""
+            const key = normalizeSeriesTitle(title)
+            const arr = groups.get(key) || []
+            arr.push(e!)
+            groups.set(key, arr)
+        }
+
+        const groupKeys = Array.from(groups.keys()).sort((a, b) => a.localeCompare(b))
+        const result: typeof raw = []
+        for (const k of groupKeys) {
+            const arr = groups.get(k)!
+            arr.sort((a, b) => {
+                const ak = chronologicalKey(a)
+                const bk = chronologicalKey(b)
+                for (let i = 0; i < ak.length; i++) {
+                    if (ak[i] !== bk[i]) return (ak[i] as number) - (bk[i] as number)
+                }
+                return 0
+            })
+            result.push(...arr)
+        }
+        return result
+    }, [list?.entries, normalizeSeriesTitle, chronologicalKey])
+
+    // Client-side pagination to reduce render cost (after sorting)
+    const entries = (sortedEntries ?? []) as NonNullable<NonNullable<typeof list>["entries"]>
     const [page, setPage] = React.useState(1)
     const pageSize = 36
     const pageCount = Math.max(1, Math.ceil(entries.length / pageSize))
     const start = (page - 1) * pageSize
     const end = start + pageSize
     const pageEntries = entries.slice(start, end)
+
+    // Map of mediaId -> folder exists (for blue badge)
+    const [folderExists, setFolderExists] = React.useState<Record<number, boolean>>({})
+
+    // Fetch folder existence for currently visible page entries
+    React.useEffect(() => {
+        const ids = (pageEntries || []).map(e => e?.media?.id).filter(Boolean) as number[]
+        if (!ids.length) {
+            setFolderExists({})
+            return
+        }
+        let cancelled = false
+        ;(async () => {
+            try {
+                const results = await Promise.all(ids.map(async (id) => {
+                    try {
+                        const res = await fetch(`/api/v1/library/anime-entry/dir-exists/${id}`)
+                        if (!res.ok) return [id, false] as const
+                        const json: any = await res.json()
+                        const exists = !!(json?.data?.exists)
+                        return [id, exists] as const
+                    } catch (_) {
+                        return [id, false] as const
+                    }
+                }))
+                if (!cancelled) {
+                    const map: Record<number, boolean> = {}
+                    for (const [id, exists] of results) map[id] = exists
+                    setFolderExists(map)
+                }
+            } catch (_) {
+                if (!cancelled) setFolderExists({})
+            }
+        })()
+        return () => { cancelled = true }
+    }, [pageEntries])
 
     // Reset page when list changes
     React.useEffect(() => {
@@ -37,7 +131,7 @@ export function AnilistAnimeEntryList(props: AnilistAnimeEntryListProps) {
     return (
         <div data-anilist-anime-entry-list className="space-y-4">
             <MediaCardLazyGrid itemCount={pageEntries.length}>
-                {pageEntries.map((entry) => (
+                {pageEntries.filter(Boolean).map((entry) => (
                 <MediaEntryCard
                     key={`${entry.media?.id}`}
                     listData={{
@@ -53,6 +147,7 @@ export function AnilistAnimeEntryList(props: AnilistAnimeEntryListProps) {
                     }}
                     showLibraryBadge
                     media={entry.media!}
+                    existingFolder={folderExists[entry.media!.id as number]}
                     showListDataButton
                     type={type}
                 />

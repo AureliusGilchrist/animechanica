@@ -29,6 +29,30 @@ import {
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
+// Server-side paginated collection page
+export type MangaCollectionPageParams = {
+    status: "CURRENT" | "PLANNING" | "COMPLETED" | "PAUSED" | "DROPPED"
+    page: number
+    pageSize: number
+}
+
+export type MangaCollectionPageResponse = {
+    items: any[]
+    total: number
+    page: number
+    pageSize: number
+}
+
+export function useGetMangaCollectionPage(params: MangaCollectionPageParams, enabled: boolean = true) {
+    return useServerQuery<MangaCollectionPageResponse, MangaCollectionPageParams>({
+        endpoint: "/api/v1/manga/collection/paged",
+        method: "GET",
+        queryKey: ["manga-collection-paged", params.status, params.page, params.pageSize],
+        params,
+        enabled,
+    })
+}
+
 export function useGetAnilistMangaCollection() {
     return useServerQuery<AL_MangaCollection, GetAnilistMangaCollection_Variables>({
         endpoint: API_ENDPOINTS.MANGA.GetAnilistMangaCollection.endpoint,

@@ -1,3 +1,6 @@
+//go:build disabled
+// +build disabled
+
 package anime
 
 import (
@@ -25,48 +28,48 @@ type (
 
 	// AllAnimeDownloadJob represents the massive download operation
 	AllAnimeDownloadJob struct {
-		ID                string                    `json:"id"`
-		Status            AllAnimeDownloadStatus    `json:"status"`
-		TotalAnime        int                       `json:"totalAnime"`
-		CompletedAnime    int                       `json:"completedAnime"`
-		FailedAnime       int                       `json:"failedAnime"`
-		ActiveBatches     int                       `json:"activeBatches"`
-		Progress          float64                   `json:"progress"`
-		StartTime         time.Time                 `json:"startTime"`
-		EndTime           *time.Time                `json:"endTime"`
-		Settings          *AllAnimeDownloadSettings `json:"settings"`
-		Statistics        *AllAnimeDownloadStats    `json:"statistics"`
-		Error             string                    `json:"error"`
-		ctx               context.Context
-		cancel            context.CancelFunc
+		ID             string                    `json:"id"`
+		Status         AllAnimeDownloadStatus    `json:"status"`
+		TotalAnime     int                       `json:"totalAnime"`
+		CompletedAnime int                       `json:"completedAnime"`
+		FailedAnime    int                       `json:"failedAnime"`
+		ActiveBatches  int                       `json:"activeBatches"`
+		Progress       float64                   `json:"progress"`
+		StartTime      time.Time                 `json:"startTime"`
+		EndTime        *time.Time                `json:"endTime"`
+		Settings       *AllAnimeDownloadSettings `json:"settings"`
+		Statistics     *AllAnimeDownloadStats    `json:"statistics"`
+		Error          string                    `json:"error"`
+		ctx            context.Context
+		cancel         context.CancelFunc
 	}
 
 	// AllAnimeDownloadSettings contains settings for the all-anime download
 	AllAnimeDownloadSettings struct {
-		PreferDualAudio     bool   `json:"preferDualAudio"`
-		PreferBluray        bool   `json:"preferBluray"`
-		PreferHighestRes    bool   `json:"preferHighestRes"`
-		MinSeeders          int    `json:"minSeeders"`
-		MaxConcurrentBatches int   `json:"maxConcurrentBatches"`
-		SkipOVA             bool   `json:"skipOva"`
-		SkipSpecials        bool   `json:"skipSpecials"`
-		MinYear             int    `json:"minYear"`
-		MaxYear             int    `json:"maxYear"`
-		IncludeGenres       []string `json:"includeGenres"`
-		ExcludeGenres       []string `json:"excludeGenres"`
+		PreferDualAudio      bool     `json:"preferDualAudio"`
+		PreferBluray         bool     `json:"preferBluray"`
+		PreferHighestRes     bool     `json:"preferHighestRes"`
+		MinSeeders           int      `json:"minSeeders"`
+		MaxConcurrentBatches int      `json:"maxConcurrentBatches"`
+		SkipOVA              bool     `json:"skipOva"`
+		SkipSpecials         bool     `json:"skipSpecials"`
+		MinYear              int      `json:"minYear"`
+		MaxYear              int      `json:"maxYear"`
+		IncludeGenres        []string `json:"includeGenres"`
+		ExcludeGenres        []string `json:"excludeGenres"`
 	}
 
 	// AllAnimeDownloadStats contains download statistics
 	AllAnimeDownloadStats struct {
-		TotalSizeGB         float64 `json:"totalSizeGb"`
-		DownloadedSizeGB    float64 `json:"downloadedSizeGb"`
-		AverageSpeed        int64   `json:"averageSpeed"`
-		EstimatedTimeLeft   string  `json:"estimatedTimeLeft"`
-		DualAudioCount      int     `json:"dualAudioCount"`
-		BlurayCount         int     `json:"blurayCount"`
-		HighResCount        int     `json:"highResCount"`
-		TorrentsAdded       int     `json:"torrentsAdded"`
-		QbittorrentActive   int     `json:"qbittorrentActive"`
+		TotalSizeGB       float64 `json:"totalSizeGb"`
+		DownloadedSizeGB  float64 `json:"downloadedSizeGb"`
+		AverageSpeed      int64   `json:"averageSpeed"`
+		EstimatedTimeLeft string  `json:"estimatedTimeLeft"`
+		DualAudioCount    int     `json:"dualAudioCount"`
+		BlurayCount       int     `json:"blurayCount"`
+		HighResCount      int     `json:"highResCount"`
+		TorrentsAdded     int     `json:"torrentsAdded"`
+		QbittorrentActive int     `json:"qbittorrentActive"`
 	}
 
 	// AllAnimeDownloadStatus represents the status of the all-anime download
@@ -74,12 +77,12 @@ type (
 )
 
 const (
-	AllAnimeDownloadStatusPending    AllAnimeDownloadStatus = "pending"
-	AllAnimeDownloadStatusRunning    AllAnimeDownloadStatus = "running"
-	AllAnimeDownloadStatusCompleted  AllAnimeDownloadStatus = "completed"
-	AllAnimeDownloadStatusFailed     AllAnimeDownloadStatus = "failed"
-	AllAnimeDownloadStatusCancelled  AllAnimeDownloadStatus = "cancelled"
-	AllAnimeDownloadStatusPaused     AllAnimeDownloadStatus = "paused"
+	AllAnimeDownloadStatusPending   AllAnimeDownloadStatus = "pending"
+	AllAnimeDownloadStatusRunning   AllAnimeDownloadStatus = "running"
+	AllAnimeDownloadStatusCompleted AllAnimeDownloadStatus = "completed"
+	AllAnimeDownloadStatusFailed    AllAnimeDownloadStatus = "failed"
+	AllAnimeDownloadStatusCancelled AllAnimeDownloadStatus = "cancelled"
+	AllAnimeDownloadStatusPaused    AllAnimeDownloadStatus = "paused"
 )
 
 // NewAllAnimeDownloader creates a new all-anime downloader
@@ -130,7 +133,7 @@ func (aad *AllAnimeDownloader) StartAllAnimeDownload(ctx context.Context, settin
 
 	// Filter anime entries based on settings
 	filteredAnime := aad.filterAnimeEntries(aad.enMasseDownloader.animeDatabase.Data, settings)
-	
+
 	if len(filteredAnime) == 0 {
 		return nil, fmt.Errorf("no anime found matching the specified criteria")
 	}
@@ -141,18 +144,18 @@ func (aad *AllAnimeDownloader) StartAllAnimeDownload(ctx context.Context, settin
 	// Create the massive download job
 	jobID := fmt.Sprintf("all_anime_%d", time.Now().Unix())
 	job := &AllAnimeDownloadJob{
-		ID:               jobID,
-		Status:           AllAnimeDownloadStatusPending,
-		TotalAnime:       len(filteredAnime),
-		CompletedAnime:   0,
-		FailedAnime:      0,
-		ActiveBatches:    0,
-		Progress:         0.0,
-		StartTime:        time.Now(),
-		Settings:         settings,
-		Statistics:       &AllAnimeDownloadStats{},
-		ctx:              jobCtx,
-		cancel:           cancel,
+		ID:             jobID,
+		Status:         AllAnimeDownloadStatusPending,
+		TotalAnime:     len(filteredAnime),
+		CompletedAnime: 0,
+		FailedAnime:    0,
+		ActiveBatches:  0,
+		Progress:       0.0,
+		StartTime:      time.Now(),
+		Settings:       settings,
+		Statistics:     &AllAnimeDownloadStats{},
+		ctx:            jobCtx,
+		cancel:         cancel,
 	}
 
 	aad.activeJob = job
@@ -200,7 +203,7 @@ func (aad *AllAnimeDownloader) processAllAnimeDownload(job *AllAnimeDownloadJob,
 		wg.Add(1)
 		go func(entry AnimeOfflineEntry, index int) {
 			defer wg.Done()
-			semaphore <- struct{}{} // Acquire
+			semaphore <- struct{}{}        // Acquire
 			defer func() { <-semaphore }() // Release
 
 			aad.processIndividualAnime(job, entry, index)
@@ -269,7 +272,7 @@ func (aad *AllAnimeDownloader) processIndividualAnime(job *AllAnimeDownloadJob, 
 		IncludeOVA:          !job.Settings.SkipOVA,
 		IncludeSpecials:     !job.Settings.SkipSpecials,
 		AutoSelectBest:      true,
-		ConcurrentDownloads: 1, // One anime at a time per batch
+		ConcurrentDownloads: 1,    // One anime at a time per batch
 		AutoLink:            true, // Always auto-link
 	}
 
@@ -291,7 +294,7 @@ func (aad *AllAnimeDownloader) processIndividualAnime(job *AllAnimeDownloadJob, 
 			Err(err).
 			Str("title", entry.Title).
 			Msg("anime: Failed to start batch download for anime")
-		
+
 		aad.mu.Lock()
 		job.FailedAnime++
 		aad.mu.Unlock()
@@ -339,30 +342,30 @@ func (aad *AllAnimeDownloader) monitorBatchJob(allJob *AllAnimeDownloadJob, batc
 // updateStatistics updates download statistics
 func (aad *AllAnimeDownloader) updateStatistics(allJob *AllAnimeDownloadJob, batchJob *BatchDownloadJob) {
 	stats := allJob.Statistics
-	
+
 	for _, item := range batchJob.Items {
 		if item.Status == BatchItemStatusCompleted && item.TorrentInfo != nil {
 			stats.TotalSizeGB += float64(item.TorrentInfo.Size) / (1024 * 1024 * 1024)
 			stats.TorrentsAdded++
 
 			// Count quality preferences achieved
-			if item.TorrentInfo.Language != "" && 
-			   (item.TorrentInfo.Language == "Dual Audio" || 
-			    item.TorrentInfo.Language == "dual") {
+			if item.TorrentInfo.Language != "" &&
+				(item.TorrentInfo.Language == "Dual Audio" ||
+					item.TorrentInfo.Language == "dual") {
 				stats.DualAudioCount++
 			}
 
 			if item.TorrentInfo.Format != "" &&
-			   (item.TorrentInfo.Format == "BD" || 
-			    item.TorrentInfo.Format == "Bluray" ||
-			    item.TorrentInfo.Format == "BDRip") {
+				(item.TorrentInfo.Format == "BD" ||
+					item.TorrentInfo.Format == "Bluray" ||
+					item.TorrentInfo.Format == "BDRip") {
 				stats.BlurayCount++
 			}
 
 			if item.TorrentInfo.Quality != "" &&
-			   (item.TorrentInfo.Quality == "1080p" || 
-			    item.TorrentInfo.Quality == "2160p" ||
-			    item.TorrentInfo.Quality == "4K") {
+				(item.TorrentInfo.Quality == "1080p" ||
+					item.TorrentInfo.Quality == "2160p" ||
+					item.TorrentInfo.Quality == "4K") {
 				stats.HighResCount++
 			}
 		}

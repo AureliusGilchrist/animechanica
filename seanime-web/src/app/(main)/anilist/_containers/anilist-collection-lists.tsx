@@ -33,6 +33,10 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai/react"
 import { AnimatePresence } from "motion/react"
 import React from "react"
 import { BiTrash } from "react-icons/bi"
+import { MdOutlineVideoLibrary } from "react-icons/md"
+import { LuBookOpen } from "react-icons/lu"
+import { RiBarChart2Line } from "react-icons/ri"
+import { FiUser } from "react-icons/fi"
 import { FaSortAmountDown } from "react-icons/fa"
 import { FiSearch } from "react-icons/fi"
 import { LuCalendar, LuLeaf } from "react-icons/lu"
@@ -84,22 +88,25 @@ export function AnilistCollectionLists() {
             <div className="w-full flex justify-center" data-anilist-collection-lists-tabs-container>
                 <StaticTabs
                     data-anilist-collection-lists-tabs
-                    className="h-10 w-fit border rounded-full"
-                    triggerClass="px-4 py-1"
+                    className="h-12 w-fit rounded-full bg-[--panel] shadow-sm border border-[--border] px-1"
+                    triggerClass="px-4 py-2 rounded-full transition-colors data-[current=true]:bg-[--primary]/10 data-[current=true]:text-[--primary] hover:bg-white/5"
                     items={[
-                        { name: "Anime", isCurrent: pageType === "anime", onClick: () => setPageType("anime") },
+                        { name: "Anime", iconType: MdOutlineVideoLibrary, isCurrent: pageType === "anime", onClick: () => setPageType("anime") },
                         ...[serverStatus?.settings?.library?.enableManga && {
                             name: "Manga",
+                            iconType: LuBookOpen,
                             isCurrent: pageType === "manga",
                             onClick: () => setPageType("manga"),
                         }],
                         {
                             name: "Profile",
+                            iconType: FiUser,
                             isCurrent: false,
                             onClick: () => router.push("/profile"),
                         },
                         {
                             name: "Stats",
+                            iconType: RiBarChart2Line,
                             isCurrent: pageType === "stats",
                             onClick: () => setPageType("stats"),
                         },

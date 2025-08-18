@@ -10,10 +10,13 @@ import { toast } from "sonner"
 import Link from "next/link"
 
 type DownloadedMangaLibraryViewProps = {
-    // Add any props needed
+    search?: string
+    selectedGenres?: string[]
+    mediaGenresById?: Record<number, string[]>
 }
 
 export function DownloadedMangaLibraryView(props: DownloadedMangaLibraryViewProps) {
+    const { search, selectedGenres = [], mediaGenresById = {} } = props
     const { data: downloadedSeries, isLoading, error, refetch } = useGetDownloadedMangaSeries()
     const refreshCacheMutation = useRefreshDownloadedMangaCache()
 
@@ -52,13 +55,30 @@ export function DownloadedMangaLibraryView(props: DownloadedMangaLibraryViewProp
         )
     }
 
+    // Apply client-side filtering by title using the provided search term
+    const filtered = React.useMemo(() => {
+        const list = downloadedSeries || []
+        const q = (search || "").trim().toLowerCase()
+        const titleFiltered = q ? list.filter((s) => s.seriesTitle?.toLowerCase().includes(q)) : list
+
+        // Apply genre filtering if any selected
+        if (!selectedGenres.length) return titleFiltered
+        return titleFiltered.filter((s) => {
+            if (!s.mediaId) return false
+            const g = mediaGenresById[s.mediaId]
+            if (!g || !g.length) return false
+            // OR match: include if any selected genre is present
+            return selectedGenres.some((sel) => g.includes(sel))
+        })
+    }, [downloadedSeries, search, selectedGenres, mediaGenresById])
+
     return (
         <PageWrapper className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold">Downloaded Manga</h1>
                     <p className="text-muted-foreground mt-1">
-                        {downloadedSeries?.length || 0} series downloaded
+                        {(filtered?.length ?? downloadedSeries?.length ?? 0)} series downloaded
                     </p>
                 </div>
                 <Button
@@ -72,7 +92,7 @@ export function DownloadedMangaLibraryView(props: DownloadedMangaLibraryViewProp
                 </Button>
             </div>
 
-            {!downloadedSeries || downloadedSeries.length === 0 ? (
+            {!filtered || filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
                     <div className="text-center">
                         <h3 className="text-lg font-medium text-muted-foreground">No downloaded manga found</h3>
@@ -82,8 +102,8 @@ export function DownloadedMangaLibraryView(props: DownloadedMangaLibraryViewProp
                     </div>
                 </div>
             ) : (
-                <MediaCardLazyGrid itemCount={downloadedSeries.length}>
-                    {downloadedSeries.map((series) => (
+                <MediaCardLazyGrid itemCount={filtered.length}>
+                    {filtered.map((series) => (
                         <DownloadedMangaCard
                             key={series.seriesPath}
                             series={series}

@@ -16,6 +16,7 @@ func (db *Database) TrimLocalFileEntries() {
 			db.Logger.Error().Err(err).Msg("database: Failed to count local file entries")
 			return
 		}
+
 		if count > 10 {
 			// Leave 5 entries
 			err = db.gormdb.Delete(&models.LocalFiles{}, "id IN (SELECT id FROM local_files ORDER BY id ASC LIMIT ?)", count-5).Error
@@ -48,4 +49,14 @@ func (db *Database) InsertLocalFiles(lfs *models.LocalFiles) (*models.LocalFiles
 		return nil, err
 	}
 	return lfs, nil
+}
+
+// ListAllLocalFilesModels returns all LocalFiles rows ordered by ID (ascending).
+// This is used by migrations that may need to consolidate multiple LocalFiles collections.
+func (db *Database) ListAllLocalFilesModels() ([]*models.LocalFiles, error) {
+	var list []*models.LocalFiles
+	if err := db.gormdb.Order("id ASC").Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
 }

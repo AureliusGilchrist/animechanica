@@ -207,6 +207,7 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Library := v1.Group("/library")
 
 	v1Library.POST("/scan", h.HandleScanLocalFiles)
+	v1Library.POST("/rematch-anime-links", h.HandleRematchAllAnimeLinks)
 
 	v1Library.DELETE("/empty-directories", h.HandleRemoveEmptyDirectories)
 
@@ -215,26 +216,39 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Library.PATCH("/local-files", h.HandleUpdateLocalFiles)
 	v1Library.DELETE("/local-files", h.HandleDeleteLocalFiles)
 	v1Library.GET("/local-files/dump", h.HandleDumpLocalFilesToFile)
-	v1Library.POST("/local-files/import", h.HandleImportLocalFiles)
-	v1Library.PATCH("/local-file", h.HandleUpdateLocalFileData)
 
-	v1Library.GET("/collection", h.HandleGetLibraryCollection)
+    // Anime entry (media) endpoints
+    // Silence status routes MUST be declared before the generic :id route to avoid conflicts
+    v1Library.GET("/anime-entry/silence/:id", h.HandleGetAnimeEntrySilenceStatus)
+    v1Library.POST("/anime-entry/silence", h.HandleToggleAnimeEntrySilenceStatus)
+    // Check if series directory exists (romaji-based)
+    v1Library.GET("/anime-entry/dir-exists/:id", h.HandleCheckAnimeSeriesDirExists)
+    // Media entry data
+    v1Library.GET("/anime-entry/:id", h.HandleGetAnimeEntry)
+    // Move & Rename linked series episodes
+    v1Library.POST("/anime-entry/move-rename", h.HandleMoveAndRenameAnimeSeries)
+    // Update progress for a media entry (used by streaming / manual updates)
+    v1Library.POST("/anime-entry/update-progress", h.HandleUpdateAnimeEntryProgress)
+    // Bulk actions on anime entry (unlink, delete-files, toggle-lock, unmatch)
+    v1Library.PATCH("/anime-entry/bulk-action", h.HandleAnimeEntryBulkAction)
+    // Library collection and linked files list
+    v1Library.GET("/collection", h.HandleGetLibraryCollection)
+    v1Library.GET("/anime-linked", h.HandleListLinkedAnimeFiles)
 	v1Library.GET("/schedule", h.HandleGetAnimeCollectionSchedule)
 
 	v1Library.GET("/scan-summaries", h.HandleGetScanSummaries)
 
 	v1Library.GET("/missing-episodes", h.HandleGetMissingEpisodes)
 
-	v1Library.GET("/anime-entry/:id", h.HandleGetAnimeEntry)
+	// Linked files review and unmatch endpoints
+	v1Library.GET("/anime-entry/linked-files/:id", h.HandleGetLinkedFilesByMedia)
+	v1Library.POST("/anime-entry/unmatch", h.HandleUnmatchAnimeEntry)
+	// Hide / Unhide a whole anime series
+	v1Library.POST("/anime-entry/hide", h.HandleHideAnimeEntry)
+	v1Library.POST("/anime-entry/unhide", h.HandleUnhideAnimeEntry)
+	// Manual resolve unmatched media
 	v1Library.POST("/anime-entry/suggestions", h.HandleFetchAnimeEntrySuggestions)
 	v1Library.POST("/anime-entry/manual-match", h.HandleAnimeEntryManualMatch)
-	v1Library.PATCH("/anime-entry/bulk-action", h.HandleAnimeEntryBulkAction)
-	v1Library.POST("/anime-entry/open-in-explorer", h.HandleOpenAnimeEntryInExplorer)
-	v1Library.POST("/anime-entry/update-progress", h.HandleUpdateAnimeEntryProgress)
-	v1Library.POST("/anime-entry/update-repeat", h.HandleUpdateAnimeEntryRepeat)
-	v1Library.GET("/anime-entry/silence/:id", h.HandleGetAnimeEntrySilenceStatus)
-	v1Library.POST("/anime-entry/silence", h.HandleToggleAnimeEntrySilenceStatus)
-
 	v1Library.POST("/unknown-media", h.HandleAddUnknownMedia)
 
 	//
@@ -342,6 +356,7 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Manga.POST("/anilist/collection/raw", h.HandleGetRawAnilistMangaCollection)
 	v1Manga.POST("/anilist/list", h.HandleAnilistListManga)
 	v1Manga.GET("/collection", h.HandleGetMangaCollection)
+	v1Manga.GET("/collection/paged", h.HandleGetMangaCollectionPage)
 	v1Manga.GET("/latest-chapter-numbers", h.HandleGetMangaLatestChapterNumbersMap)
 	v1Manga.POST("/refetch-chapter-containers", h.HandleRefetchMangaChapterContainers)
 	v1Manga.GET("/entry/:id", h.HandleGetMangaEntry)

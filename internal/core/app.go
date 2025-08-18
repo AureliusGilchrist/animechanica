@@ -220,6 +220,9 @@ func NewApp(configOpts *ConfigOptions, selfupdater *updater.SelfUpdater) *App {
 		logger.Fatal().Err(err).Msgf("app: Failed to initialize file cacher")
 	}
 
+	// Inject shared cacher into AniList caching helpers
+	anilist.SetSharedCacher(fileCacher)
+
 	// Initialize extension repository
 	extensionRepository := extension_repo.NewRepository(&extension_repo.NewRepositoryOptions{
 		Logger:         logger,

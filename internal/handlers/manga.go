@@ -54,6 +54,83 @@ func (h *Handler) HandleGetAnilistMangaCollection(c echo.Context) error {
 	return h.RespondWithData(c, collection)
 }
 
+// HandleGetMangaCollectionPage
+//
+//  @summary returns a paginated slice of the user's manga collection for a given list status.
+//  @desc Use query params: status (CURRENT|PLANNING|COMPLETED|PAUSED|DROPPED), page (1-based), pageSize.
+//  @route /api/v1/manga/collection/paged [GET]
+//  @returns { items: []*manga.CollectionEntry, total: int, page: int, pageSize: int }
+func (h *Handler) HandleGetMangaCollectionPage(c echo.Context) error {
+	statusParam := c.QueryParam("status")
+	pageStr := c.QueryParam("page")
+	pageSizeStr := c.QueryParam("pageSize")
+
+	if statusParam == "" {
+		return h.RespondWithError(c, fmt.Errorf("missing status"))
+	}
+
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page <= 0 {
+		page = 1
+	}
+	pageSize, err := strconv.Atoi(pageSizeStr)
+	if err != nil || pageSize <= 0 {
+		pageSize = 20
+	}
+
+	// Build full collection once (cached by App layer internally) then slice server-side per list
+	aniCol, err := h.App.GetMangaCollection(false)
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	collection, err := manga.NewCollection(&manga.NewCollectionOptions{
+		MangaCollection: aniCol,
+		Platform:        h.App.AnilistPlatform,
+	})
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	// Normalize and locate the requested list
+	requested := anilist.MediaListStatus(strings.ToUpper(statusParam))
+	var entries []*manga.CollectionEntry
+	for _, l := range collection.Lists {
+		if l == nil { continue }
+		if l.Status == requested {
+			entries = l.Entries
+			break
+		}
+	}
+	if entries == nil {
+		// Fall back to empty list if status not found
+		entries = []*manga.CollectionEntry{}
+	}
+
+	total := len(entries)
+	// Compute slice bounds
+	start := (page - 1) * pageSize
+	if start > total { start = total }
+	end := start + pageSize
+	if end > total { end = total }
+
+	pageItems := entries[start:end]
+
+	resp := struct {
+		Items    []*manga.CollectionEntry `json:"items"`
+		Total    int                     `json:"total"`
+		Page     int                     `json:"page"`
+		PageSize int                     `json:"pageSize"`
+	}{
+		Items:    pageItems,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	}
+
+	return h.RespondWithData(c, resp)
+}
+
 // HandleGetRawAnilistMangaCollection
 //
 //	@summary returns the user's AniList manga collection.

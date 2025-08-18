@@ -1,10 +1,12 @@
-import React, { useState } from "react"
+import React from "react"
 import { PageWrapper } from "@/components/shared/page-wrapper"
-import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DownloadedMangaLibraryView } from "./downloaded-manga-library-view"
-import { MangaLibraryView } from "./manga-library-view"
 import { Manga_Collection } from "@/api/generated/types"
+import { TextInput } from "@/components/ui/text-input"
+import { IconButton } from "@/components/ui/button"
+import { MediaGenreSelector } from "@/app/(main)/_features/media/_components/media-genre-selector"
+import { useDebounce } from "@/hooks/use-debounce"
+import { FiSearch, FiX } from "react-icons/fi"
 
 type MainLibraryViewProps = {
     // Props from existing manga library
@@ -24,71 +26,92 @@ export function MainLibraryView(props: MainLibraryViewProps) {
         hasManga,
     } = props
 
+    // Local search state for downloaded manga view
+    const [search, setSearch] = React.useState("")
+    const debouncedSearch = useDebounce(search, 250)
+    const [selectedGenres, setSelectedGenres] = React.useState<string[]>([])
+
+    // Build a quick lookup of mediaId -> genres from the provided collection data
+    const mediaGenresById = React.useMemo(() => {
+        const map: Record<number, string[]> = {}
+        try {
+            const lists = collection?.lists || []
+            for (const list of lists) {
+                const entries = list?.entries || []
+                for (const e of entries) {
+                    const id = e?.media?.id
+                    const g = e?.media?.genres as unknown as string[] | undefined
+                    if (typeof id === "number" && Array.isArray(g)) {
+                        map[id] = g
+                    }
+                }
+            }
+        } catch (_) {}
+        return map
+    }, [collection])
+
     return (
         <PageWrapper className="space-y-6">
-            {/* Header with toggle */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold">Library</h1>
-                    <p className="text-muted-foreground mt-1">
-                        Manage your anime and manga collection
-                    </p>
+            {/* Header with toolbar */}
+            <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold">Library</h1>
+                        <p className="text-muted-foreground mt-1">
+                            Manage your anime and manga collection
+                        </p>
+                    </div>
+                </div>
+
+                {/* Toolbar: search + genre chips */}
+                <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-2 max-w-xl">
+                        <TextInput
+                            value={search}
+                            onValueChange={setSearch}
+                            placeholder="Search manga by title..."
+                            leftIcon={<FiSearch />}
+                            className="w-full"
+                            onKeyDown={(e) => {
+                                if (e.key === "Escape") setSearch("")
+                            }}
+                        />
+                        {!!search?.length && (
+                            <IconButton
+                                intent="white-basic"
+                                size="sm"
+                                icon={<FiX />}
+                                onClick={() => setSearch("")}
+                                aria-label="Clear search"
+                            />
+                        )}
+                    </div>
+
+                    {!!(genres && genres.length) && (
+                        <MediaGenreSelector
+                            items={genres.map((g) => ({
+                                name: g,
+                                isCurrent: selectedGenres.includes(g),
+                                onClick: () =>
+                                    setSelectedGenres((prev) =>
+                                        prev.includes(g)
+                                            ? prev.filter((x) => x !== g)
+                                            : [...prev, g]
+                                    ),
+                            }))}
+                        />
+                    )}
                 </div>
             </div>
 
-            {/* Tabs for Anime/Manga toggle */}
-            <Tabs defaultValue="manga" className="w-full">
-                <TabsList className="grid w-full max-w-md grid-cols-2">
-                    <TabsTrigger value="anime" disabled>
-                        Anime
-                        <span className="ml-2 text-xs text-muted-foreground">(Coming Soon)</span>
-                    </TabsTrigger>
-                    <TabsTrigger value="manga">
-                        Manga
-                    </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="anime" className="space-y-6">
-                    <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
-                        <div className="text-center">
-                            <h3 className="text-lg font-medium text-muted-foreground">Anime Library Coming Soon</h3>
-                            <p className="text-sm text-muted-foreground mt-2">
-                                Downloaded anime series will be displayed here in a future update
-                            </p>
-                        </div>
-                    </div>
-                </TabsContent>
-
-                <TabsContent value="manga" className="space-y-6">
-                    {/* Sub-tabs for Online vs Downloaded manga */}
-                    <Tabs defaultValue="downloaded" className="w-full">
-                        <TabsList className="grid w-full max-w-md grid-cols-2">
-                            <TabsTrigger value="online">
-                                Online Collection
-                            </TabsTrigger>
-                            <TabsTrigger value="downloaded">
-                                Downloaded Series
-                            </TabsTrigger>
-                        </TabsList>
-
-                        <TabsContent value="online" className="space-y-6">
-                            {collection && (
-                                <MangaLibraryView
-                                    collection={collection}
-                                    filteredCollection={filteredCollection}
-                                    genres={genres || []}
-                                    storedProviders={storedProviders || {}}
-                                    hasManga={hasManga || false}
-                                />
-                            )}
-                        </TabsContent>
-
-                        <TabsContent value="downloaded" className="space-y-6">
-                            <DownloadedMangaLibraryView />
-                        </TabsContent>
-                    </Tabs>
-                </TabsContent>
-            </Tabs>
+            {/* Downloaded Series */}
+            <div className="w-full space-y-6">
+                <DownloadedMangaLibraryView
+                    search={debouncedSearch}
+                    selectedGenres={selectedGenres}
+                    mediaGenresById={mediaGenresById}
+                />
+            </div>
         </PageWrapper>
     )
 }

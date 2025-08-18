@@ -5,7 +5,6 @@ import (
 	"errors"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"seanime/internal/api/anilist"
 	"seanime/internal/api/metadata"
 	"seanime/internal/events"
@@ -16,6 +15,7 @@ import (
 	"seanime/internal/platforms/platform"
 	"seanime/internal/util"
 	"seanime/internal/util/limiter"
+	"strings"
 	"sync"
 	"time"
 
@@ -169,7 +169,7 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 	// bypass hooks already applied above.
 	{
 		var (
-			reOPED   = regexp.MustCompile(`(?i)(?:^|[\s._\-])(NC?OP|NC?ED|OP|ED|Creditless|Extras?)(?:[\s._\-]?\d+)?(?:$|[\s._\-])`)
+			reOPED    = regexp.MustCompile(`(?i)(?:^|[\s._\-])(NC?OP|NC?ED|OP|ED|Creditless|Extras?)(?:[\s._\-]?\d+)?(?:$|[\s._\-])`)
 			reEpisode = regexp.MustCompile(`(?i)(?:^|[^a-zA-Z])\d{1,3}(?:v\d+)?(?:[^a-zA-Z]|$)`)
 		)
 		shouldKeep := func(p string) bool {

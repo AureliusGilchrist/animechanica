@@ -39,6 +39,24 @@ export default function ProfilePage() {
         return () => { abort = true }
     }, [])
 
+    const [rematching, setRematching] = React.useState(false)
+    const [rematchMsg, setRematchMsg] = React.useState<string | null>(null)
+
+    async function handleRematchAll() {
+        setRematchMsg(null)
+        setRematching(true)
+        try {
+            const res = await fetch("/api/v1/library/rematch-anime-links", { method: "POST" })
+            if (!res.ok) throw new Error(`HTTP ${res.status}`)
+            // Optionally we could refresh stats or notify
+            setRematchMsg("Rematch started and scan completed. Library links updated.")
+        } catch (e: any) {
+            setRematchMsg(`Failed to rematch: ${e?.message ?? "Unknown error"}`)
+        } finally {
+            setRematching(false)
+        }
+    }
+
     return (
         <>
             <PageWrapper
@@ -54,6 +72,24 @@ export default function ProfilePage() {
                 <ProfileHeader />
 
                 <AppLayoutStack className="mt-6 space-y-8">
+                    {/* Library Tools */}
+                    <section>
+                        <h2 className="text-lg font-semibold mb-3">Library Tools</h2>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={handleRematchAll}
+                                disabled={rematching}
+                                className="px-3 py-2 rounded border bg-[--muted]/10 hover:bg-[--muted]/20 disabled:opacity-60"
+                                title="Bulk unmatch all anime links and rescan to rematch using Romaji-prioritized matcher"
+                            >
+                                {rematching ? "Running rematch…" : "Rematch Anime Links"}
+                            </button>
+                            {rematchMsg && (
+                                <span className="text-sm text-[--muted]">{rematchMsg}</span>
+                            )}
+                        </div>
+                    </section>
+
                     {error && (
                         <div className="text-red-500 text-sm">{error}</div>
                     )}

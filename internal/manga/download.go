@@ -208,6 +208,39 @@ func (d *Downloader) DownloadChapter(opts DownloadChapterOptions) error {
 		return errors.New("manga downloader: Manga downloader is in offline mode")
 	}
 
+	// Check if chapter already downloaded or already queued to avoid duplicates
+	// Use current media map and DB-backed queue view
+	if d.mediaMap != nil {
+		if data, err := d.mediaMap.getMediaDownload(opts.MediaId, d.database); err == nil {
+			// Check downloaded
+			if providerChs, ok := data.Downloaded[opts.Provider]; ok {
+				for _, ch := range providerChs {
+					if ch.ChapterID == opts.ChapterId {
+						d.logger.Debug().
+							Str("provider", opts.Provider).
+							Int("mediaId", opts.MediaId).
+							Str("chapterId", opts.ChapterId).
+							Msg("manga downloader: Chapter already downloaded, skipping queue")
+						return nil
+					}
+				}
+			}
+			// Check queued
+			if providerQ, ok := data.Queued[opts.Provider]; ok {
+				for _, ch := range providerQ {
+					if ch.ChapterID == opts.ChapterId {
+						d.logger.Debug().
+							Str("provider", opts.Provider).
+							Int("mediaId", opts.MediaId).
+							Str("chapterId", opts.ChapterId).
+							Msg("manga downloader: Chapter already in queue, skipping queue")
+						return nil
+					}
+				}
+			}
+		}
+	}
+
 	chapterContainer, found := d.repository.getChapterContainerFromFilecache(opts.Provider, opts.MediaId)
 	if !found {
 		return errors.New("chapters not found")
@@ -316,12 +349,27 @@ func (d *Downloader) GetMediaDownloads(mediaId int, cached bool) (ret MediaDownl
 	if !cached {
 		d.hydrateMediaMap()
 	}
-
 	return d.mediaMap.getMediaDownload(mediaId, d.database)
 }
 
 func (d *Downloader) RunChapterDownloadQueue() {
-	d.chapterDownloader.Run()
+    // Reset any items that were left in 'downloading' state (e.g., due to shutdown)
+    // so the queue can pick them up again as 'not_started'.
+    if err := d.database.ResetDownloadingChapterDownloadQueueItems(); err != nil {
+        d.logger.Warn().Err(err).Msg("manga downloader: Failed to reset 'downloading' queue items on start")
+    } else {
+        d.logger.Debug().Msg("manga downloader: Reset lingering 'downloading' queue items to 'not_started'")
+    }
+
+    // Also reset any items that previously errored (e.g., due to cancellation mid-download)
+    // so that resuming will retry them automatically.
+    if err := d.database.ResetErroredChapterDownloadQueueItems(); err != nil {
+        d.logger.Warn().Err(err).Msg("manga downloader: Failed to reset 'errored' queue items on start")
+    } else {
+        d.logger.Debug().Msg("manga downloader: Reset lingering 'errored' queue items to 'not_started'")
+    }
+
+    d.chapterDownloader.Run()
 }
 
 func (d *Downloader) StopChapterDownloadQueue() {

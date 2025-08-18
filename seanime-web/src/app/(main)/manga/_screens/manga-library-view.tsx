@@ -6,25 +6,30 @@ import { MediaGenreSelector } from "@/app/(main)/_features/media/_components/med
 import { SeaCommandInjectableItem, useSeaCommandInject } from "@/app/(main)/_features/sea-command/use-inject"
 import { seaCommand_compareMediaTitles } from "@/app/(main)/_features/sea-command/utils"
 import { __mangaLibraryHeaderImageAtom, __mangaLibraryHeaderMangaAtom } from "@/app/(main)/manga/_components/library-header"
-import { __mangaLibrary_paramsAtom, __mangaLibrary_paramsInputAtom } from "@/app/(main)/manga/_lib/handle-manga-collection"
+import { __mangaLibrary_paramsAtom, __mangaLibrary_paramsInputAtom, __mangaLibrary_searchInputAtom, __mangaLibrary_debouncedSearchInputAtom } from "@/app/(main)/manga/_lib/handle-manga-collection"
 import { LuffyError } from "@/components/shared/luffy-error"
 import { PageWrapper } from "@/components/shared/page-wrapper"
 import { TextGenerateEffect } from "@/components/shared/text-generate-effect"
 import { Button, IconButton } from "@/components/ui/button"
+import { TextInput } from "@/components/ui/text-input"
 import { DropdownMenu, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { useDebounce } from "@/hooks/use-debounce"
 import { getMangaCollectionTitle } from "@/lib/server/utils"
+import { filterEntriesByTitle } from "@/lib/helpers/filtering"
 import { ThemeLibraryScreenBannerType, useThemeSettings } from "@/lib/theme/hooks"
 import { useSetAtom } from "jotai/index"
 import { useAtom, useAtomValue } from "jotai/react"
 import { AnimatePresence } from "motion/react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import React, { memo } from "react"
 import { BiDotsVertical } from "react-icons/bi"
+import { FiSearch, FiX } from "react-icons/fi"
 import { LuBookOpenCheck, LuRefreshCcw } from "react-icons/lu"
 import { toast } from "sonner"
 import { CommandItemMedia } from "../../_features/sea-command/_components/command-utils"
+import { Select } from "@/components/ui/select/select"
+import { useGetMangaCollectionPage } from "@/api/hooks/manga.hooks"
 
 type MangaLibraryViewProps = {
     collection: Manga_Collection
@@ -34,7 +39,6 @@ type MangaLibraryViewProps = {
     hasManga: boolean
 }
 
-// Reusable paginated grid for media entries
 const MemoMediaEntryCard = React.memo(function MemoMediaEntryCard({ media, listData, type }: { media: any, listData: any, type: "manga" | "anime" }) {
     return (
         <MediaEntryCard
@@ -46,32 +50,129 @@ const MemoMediaEntryCard = React.memo(function MemoMediaEntryCard({ media, listD
         />
     )
 }, (prev, next) => {
-    // Shallow compare key fields to avoid unnecessary re-renders
     return prev.media?.id === next.media?.id && prev.type === next.type && prev.listData?.status === next.listData?.status && prev.listData?.progress === next.listData?.progress
 })
 
 function PaginatedMediaGrid({
     entries,
     type,
-    pageSize = 20,
+    defaultPageSize = 20,
     onEntryHover,
+    queryKey,
+    server,
 }: {
     entries: any[]
     type: "manga" | "anime"
-    pageSize?: number
+    defaultPageSize?: number
     onEntryHover?: (entry: any) => void
+    queryKey?: string
+    server?: { status: "CURRENT" | "PLANNING" | "COMPLETED" | "PAUSED" | "DROPPED" }
 }) {
-    const [page, setPage] = React.useState(1)
-    const pageCount = Math.max(1, Math.ceil((entries?.length || 0) / pageSize))
-    const start = (page - 1) * pageSize
+    const router = useRouter()
+    const pathname = usePathname()
+    const searchParams = useSearchParams()
+    // no-op
+
+    const sizeParamKey = React.useMemo(() => `${queryKey || type}_size`, [queryKey, type])
+    const pageParamKey = React.useMemo(() => `${queryKey || type}_page`, [queryKey, type])
+
+    const initialSize = React.useMemo(() => {
+        const v = Number(searchParams.get(sizeParamKey))
+        return Number.isFinite(v) && v > 0 ? v : defaultPageSize
+    }, [searchParams, sizeParamKey, defaultPageSize])
+
+    const initialPage = React.useMemo(() => {
+        const v = Number(searchParams.get(pageParamKey))
+        return Number.isFinite(v) && v > 0 ? v : 1
+    }, [searchParams, pageParamKey])
+
+    const [pageSize, setPageSize] = React.useState<number>(initialSize)
+    const [page, setPage] = React.useState<number>(initialPage)
+
+    const clientTotal = entries?.length || 0
+    const clientPageCount = Math.max(1, Math.ceil(clientTotal / pageSize))
+    const safePage = Math.max(1, page)
+    const start = (safePage - 1) * pageSize
     const end = start + pageSize
-    const pageEntries = React.useMemo(() => (entries || []).slice(start, end), [entries, start, end])
-    React.useEffect(() => { setPage(1) }, [entries])
+    const pageCacheRef = React.useRef<Map<string, any[]>>(new Map())
+    const cacheKey = React.useMemo(() => `${pageSize}:${safePage}`, [pageSize, safePage])
+    const pageEntries = React.useMemo(() => {
+        const cached = pageCacheRef.current.get(cacheKey)
+        if (cached) return cached
+        const sliced = (entries || []).slice(start, end)
+        pageCacheRef.current.set(cacheKey, sliced)
+        return sliced
+    }, [entries, start, end, cacheKey])
+
+    // Server-side pagination
+    const { data: serverPage, isLoading, isError } = useGetMangaCollectionPage(
+        { status: server?.status as any, page: safePage, pageSize },
+        !!server
+    )
+    const serverPageCount = React.useMemo(() => {
+        if (!server) return clientPageCount
+        const total = serverPage?.total ?? 0
+        return Math.max(1, Math.ceil(total / pageSize))
+    }, [server, serverPage?.total, pageSize, clientPageCount])
+
+    // keep URL in sync on page/pageSize change
+    const updateUrl = React.useCallback((nextPage: number, nextSize: number) => {
+        const sp = new URLSearchParams(searchParams.toString())
+        sp.set(pageParamKey, String(nextPage))
+        sp.set(sizeParamKey, String(nextSize))
+        router.replace(`${pathname}?${sp.toString()}`, { scroll: false })
+    }, [router, pathname, searchParams, pageParamKey, sizeParamKey])
+
+    React.useEffect(() => {
+        // reset to page 1 when entries set changes (client mode)
+        if (!server) {
+            setPage(1)
+            pageCacheRef.current.clear()
+        }
+    }, [entries, server])
+
+    React.useEffect(() => {
+        // clamp page when total changes
+        const pc = server ? serverPageCount : clientPageCount
+        if (page > pc) {
+            setPage(pc)
+            updateUrl(pc, pageSize)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [serverPageCount, clientPageCount, server])
+
+    React.useEffect(() => {
+        updateUrl(page, pageSize)
+    }, [page, pageSize, updateUrl])
+
+    // Prefetch adjacent pages (server mode)
+    React.useEffect(() => {
+        if (!server) return
+        const status = server.status
+        const next = safePage + 1
+        const prev = Math.max(1, safePage - 1)
+        const totalPages = serverPageCount
+        // Trigger hidden queries via our hook for caching
+        // Note: using the same hook is acceptable for prefetch when enabled flag drives request
+        // eslint-disable-next-line react-hooks/rules-of-hooks
+        // no-op: hooks cannot be called conditionally here; instead rely on separate invisible components would be overkill
+        // So we skip explicit prefetch here to keep rule-compliant. React Query cache will keep current page.
+        // Optionally, we could dispatch background requests via fetch, but we'd need auth context.
+        void status; void next; void prev; void totalPages
+    }, [server, safePage, serverPageCount])
+
+    const itemsToRender = server ? (serverPage?.items || []) : pageEntries
 
     return (
         <>
-            <MediaCardLazyGrid itemCount={pageEntries.length}>
-                {pageEntries.map((entry) => (
+            {server && isLoading && (
+                <div className="text-sm text-[--muted] text-center py-2">Loading...</div>
+            )}
+            {server && isError && (
+                <div className="text-sm text-red-500 text-center py-2">Failed to load page.</div>
+            )}
+            <MediaCardLazyGrid itemCount={itemsToRender.length}>
+                {itemsToRender.map((entry) => (
                     <div
                         key={entry.media?.id}
                         onMouseEnter={() => {
@@ -82,25 +183,44 @@ function PaginatedMediaGrid({
                     </div>
                 ))}
             </MediaCardLazyGrid>
-            {pageCount > 1 && (
-                <div className="flex items-center justify-center gap-3 pt-2">
-                    <button
-                        className="px-3 py-1 rounded border disabled:opacity-50"
-                        onClick={() => setPage(p => Math.max(1, p - 1))}
-                        disabled={page === 1}
-                    >
-                        Prev
-                    </button>
-                    <span className="text-sm text-[--muted]">Page {page} / {pageCount}</span>
-                    <button
-                        className="px-3 py-1 rounded border disabled:opacity-50"
-                        onClick={() => setPage(p => Math.min(pageCount, p + 1))}
-                        disabled={page === pageCount}
-                    >
-                        Next
-                    </button>
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                <div className="flex items-center gap-2">
+                    <span className="text-sm text-[--muted]">Page size</span>
+                    <Select
+                        size="sm"
+                        placeholder=""
+                        value={String(pageSize)}
+                        onValueChange={(val) => {
+                            const next = Number(val)
+                            if (!Number.isFinite(next) || next <= 0) return
+                            setPageSize(next)
+                            setPage(1)
+                            updateUrl(1, next)
+                        }}
+                        options={[12, 20, 40, 60, 100].map(sz => ({ value: String(sz), label: String(sz) }))}
+                        className="min-w-[5rem]"
+                    />
                 </div>
-            )}
+                {(server ? serverPageCount : clientPageCount) > 1 && (
+                    <div className="flex items-center justify-center gap-3">
+                        <button
+                            className="px-3 py-1 rounded border disabled:opacity-50"
+                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                            disabled={safePage === 1}
+                        >
+                            Prev
+                        </button>
+                        <span className="text-sm text-[--muted]">Page {safePage} / {server ? serverPageCount : clientPageCount}</span>
+                        <button
+                            className="px-3 py-1 rounded border disabled:opacity-50"
+                            onClick={() => setPage(p => Math.min((server ? serverPageCount : clientPageCount), p + 1))}
+                            disabled={safePage === (server ? serverPageCount : clientPageCount)}
+                        >
+                            Next
+                        </button>
+                    </div>
+                )}
+            </div>
         </>
     )
 }
@@ -117,6 +237,12 @@ export function MangaLibraryView(props: MangaLibraryViewProps) {
     } = props
 
     const [params, setParams] = useAtom(__mangaLibrary_paramsAtom)
+    const [search, setSearch] = useAtom(__mangaLibrary_searchInputAtom)
+    const debouncedSearch = useDebounce(search, 250)
+    const setDebouncedSearch = useSetAtom(__mangaLibrary_debouncedSearchInputAtom)
+    React.useEffect(() => {
+        setDebouncedSearch(debouncedSearch)
+    }, [debouncedSearch])
 
     return (
         <>
@@ -125,7 +251,28 @@ export function MangaLibraryView(props: MangaLibraryViewProps) {
                 className="relative 2xl:order-first pb-10 p-4"
                 data-manga-library-view-container
             >
-                <div className="w-full flex justify-end">
+                <div className="w-full flex items-center justify-between gap-3 mb-3">
+                    <div className="flex-1 max-w-xl flex items-center gap-2">
+                        <TextInput
+                            value={search}
+                            onValueChange={setSearch}
+                            placeholder="Search manga by title..."
+                            leftIcon={<FiSearch />}
+                            className="w-full"
+                            onKeyDown={(e) => {
+                                if (e.key === "Escape") setSearch("")
+                            }}
+                        />
+                        {!!search?.length && (
+                            <IconButton
+                                intent="white-basic"
+                                size="sm"
+                                icon={<FiX />}
+                                onClick={() => setSearch("")}
+                                aria-label="Clear search"
+                            />
+                        )}
+                    </div>
                 </div>
 
                 <AnimatePresence mode="wait" initial={false}>
@@ -149,8 +296,8 @@ export function MangaLibraryView(props: MangaLibraryViewProps) {
                     </LuffyError>}
 
                     {!params.genre?.length ?
-                        <CollectionLists key="lists" collectionList={collection} genres={genres} storedProviders={storedProviders} />
-                        : <FilteredCollectionLists key="filtered-collection" collectionList={filteredCollection} genres={genres} />
+                        <CollectionLists key="lists" collectionList={collection} genres={genres} storedProviders={storedProviders} search={debouncedSearch} />
+                        : <FilteredCollectionLists key="filtered-collection" collectionList={filteredCollection} genres={genres} search={debouncedSearch} />
                     }
                 </AnimatePresence>
             </PageWrapper>
@@ -158,11 +305,20 @@ export function MangaLibraryView(props: MangaLibraryViewProps) {
     )
 }
 
-export function CollectionLists({ collectionList, genres, storedProviders }: {
+export function CollectionLists({ collectionList, genres, storedProviders, search }: {
     collectionList: Manga_Collection | undefined
     genres: string[]
     storedProviders: Record<string, string>
+    search: string
 }) {
+    const clearMangaSearch = useSetAtom(__mangaLibrary_searchInputAtom)
+    const totalFiltered = React.useMemo(() => {
+        if (!collectionList?.lists?.length) return 0
+        return collectionList.lists.reduce((acc, collection) => {
+            const filtered = filterEntriesByTitle(collection.entries ?? [], search)
+            return acc + (filtered?.length || 0)
+        }, 0)
+    }, [collectionList, search])
 
     return (
         <PageWrapper
@@ -177,11 +333,22 @@ export function CollectionLists({ collectionList, genres, storedProviders }: {
                 },
             }}
         >
+            {totalFiltered === 0 && (
+                <LuffyError title="No results">
+                    <p className="text-[--muted]">Try a different search or adjust your filters.</p>
+                    <div className="mt-2">
+                        <Button intent="white-outline" size="sm" onClick={() => clearMangaSearch("")}>Clear search</Button>
+                    </div>
+                </LuffyError>
+            )}
             {collectionList?.lists?.map(collection => {
                 if (!collection.entries?.length) return null
+                const filteredEntries = filterEntriesByTitle(collection.entries, search)
+                if (!filteredEntries?.length) return null
+                const listWithSearch = { ...collection, entries: filteredEntries }
                 return (
                     <React.Fragment key={collection.type}>
-                        <CollectionListItem list={collection} storedProviders={storedProviders} />
+                        <CollectionListItem list={listWithSearch} storedProviders={storedProviders} />
 
                         {(collection.type === "CURRENT" && !!genres?.length) && <GenreSelector genres={genres} />}
                     </React.Fragment>
@@ -192,23 +359,17 @@ export function CollectionLists({ collectionList, genres, storedProviders }: {
 
 }
 
-export function FilteredCollectionLists({ collectionList, genres }: {
+export function FilteredCollectionLists({ collectionList, genres, search }: {
     collectionList: Manga_Collection | undefined
     genres: string[]
+    search: string
 }) {
 
+    const clearMangaSearch = useSetAtom(__mangaLibrary_searchInputAtom)
     const entries = React.useMemo(() => {
-        return collectionList?.lists?.flatMap(n => n.entries).filter(Boolean) ?? []
-    }, [collectionList])
-
-    // Pagination for filtered combined list
-    const [page, setPage] = React.useState(1)
-    const pageSize = 20
-    const pageCount = Math.max(1, Math.ceil(entries.length / pageSize))
-    const start = (page - 1) * pageSize
-    const end = start + pageSize
-    const pageEntries = React.useMemo(() => entries.slice(start, end), [entries, start, end])
-    React.useEffect(() => { setPage(1) }, [collectionList])
+        const flat = collectionList?.lists?.flatMap(n => n.entries).filter(Boolean) ?? []
+        return filterEntriesByTitle(flat, search) as typeof flat
+    }, [collectionList, search])
 
     return (
         <PageWrapper
@@ -217,54 +378,29 @@ export function FilteredCollectionLists({ collectionList, genres }: {
             {...{
                 initial: { opacity: 0, y: 60 },
                 animate: { opacity: 1, y: 0 },
-                exit: { opacity: 0, scale: 0.99 },
+                 exit: { opacity: 0, scale: 0.99 },
                 transition: {
                     duration: 0.35,
                 },
             }}
         >
-
+            {entries.length === 0 && (
+                <LuffyError title="No results">
+                    <p className="text-[--muted]">Try a different search or adjust your filters.</p>
+                    <div className="mt-2">
+                        <Button intent="white-outline" size="sm" onClick={() => clearMangaSearch("")}>Clear search</Button>
+                    </div>
+                </LuffyError>
+            )}
             {!!genres?.length && <div className="mt-24">
                 <GenreSelector genres={genres} />
             </div>}
 
-            <MediaCardLazyGrid itemCount={pageEntries?.length || 0}>
-                {pageEntries.map(entry => {
-                    return <div
-                        key={entry.media?.id}
-                    >
-                        <MediaEntryCard
-                            media={entry.media!}
-                            listData={entry.listData}
-                            showListDataButton
-                            withAudienceScore={false}
-                            type="manga"
-                        />
-                    </div>
-                })}
-            </MediaCardLazyGrid>
-
-            {pageCount > 1 && (
-                <div className="flex items-center justify-center gap-3 pt-2">
-                    <button
-                        className="px-3 py-1 rounded border disabled:opacity-50"
-                        onClick={() => setPage(p => Math.max(1, p - 1))}
-                        disabled={page === 1}
-                    >
-                        Prev
-                    </button>
-                    <span className="text-sm text-[--muted]">
-                        Page {page} / {pageCount}
-                    </span>
-                    <button
-                        className="px-3 py-1 rounded border disabled:opacity-50"
-                        onClick={() => setPage(p => Math.min(pageCount, p + 1))}
-                        disabled={page === pageCount}
-                    >
-                        Next
-                    </button>
-                </div>
-            )}
+            <PaginatedMediaGrid
+                entries={entries}
+                type="manga"
+                queryKey="manga_filtered"
+            />
         </PageWrapper>
     )
 
@@ -393,6 +529,8 @@ const CollectionListItem = memo(({ list, storedProviders }: { list: Manga_Collec
             <PaginatedMediaGrid
                 entries={list.entries || []}
                 type="manga"
+                queryKey={`manga_${(list.type || "list").toLowerCase()}`}
+                server={{ status: (list.type as any) }}
                 onEntryHover={(entry) => {
                     if (list.type === "CURRENT" && entry.media?.bannerImage) {
                         React.startTransition(() => {

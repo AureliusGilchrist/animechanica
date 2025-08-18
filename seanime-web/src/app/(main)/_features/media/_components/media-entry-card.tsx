@@ -65,6 +65,8 @@ type MediaEntryCardProps<T extends "anime" | "manga"> = {
     nakamaLibraryData?: T extends "anime" ? Anime_NakamaEntryLibraryData : never
     hideUnseenCountBadge?: boolean
     hideAnilistEntryEditButton?: boolean
+    // New: mark as existing in library (folder exists) to show blue badge even without libraryData
+    existingFolder?: T extends "anime" ? boolean : never
 } & MediaEntryCardBaseProps
 
 export function MediaEntryCard<T extends "anime" | "manga">(props: MediaEntryCardProps<T>) {
@@ -81,6 +83,7 @@ export function MediaEntryCard<T extends "anime" | "manga">(props: MediaEntryCar
         withAudienceScore = true,
         hideUnseenCountBadge = false,
         hideAnilistEntryEditButton = false,
+        existingFolder,
     } = props
 
     const router = useRouter()
@@ -94,7 +97,8 @@ export function MediaEntryCard<T extends "anime" | "manga">(props: MediaEntryCar
 
     const [__atomicLibraryCollection, getAtomicLibraryEntry] = useAtom(getAtomicLibraryEntryAtom)
 
-    const showLibraryBadge = !!libraryData && !!props.showLibraryBadge
+    // Show library badge if we have libraryData as before, or if caller indicates an existing folder
+    const showLibraryBadge = (!!libraryData && !!props.showLibraryBadge) || !!existingFolder
 
     const showProgressBar = React.useMemo(() => {
         return !!listData?.progress
@@ -304,6 +308,11 @@ export function MediaEntryCard<T extends "anime" | "manga">(props: MediaEntryCar
                 bannerImage={media.coverImage?.extraLarge || ""}
                 isAdult={media.isAdult}
                 showLibraryBadge={showLibraryBadge}
+                // Treat existingFolder as a partial library to render blue intent badge
+                partialLibrary={
+                    (type === "anime" && !!libraryData && !!missingEpisodes.find(n => n.baseAnime?.id === media.id))
+                    || (!!existingFolder) || false
+                }
                 blurAdultContent={serverStatus?.settings?.anilist?.blurAdultContent}
             >
                 <div data-media-entry-card-body-progress-badge-container className="absolute z-[10] left-0 bottom-0 flex items-end">

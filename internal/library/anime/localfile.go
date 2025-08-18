@@ -25,6 +25,16 @@ type (
 		Locked           bool                   `json:"locked"`
 		Ignored          bool                   `json:"ignored"` // Unused for now
 		MediaId          int                    `json:"mediaId"`
+		// LinkSource indicates how the link to AniList was created: "auto" (scanner) or "manual" (user)
+		LinkSource       string                 `json:"linkSource,omitempty"`
+		// AutoMatchBlocked prevents the scanner from automatically rematching this file
+		AutoMatchBlocked bool                   `json:"autoMatchBlocked,omitempty"`
+		// Hidden hides the series (by mediaId) from resolved views; applied per file and filtered in list handlers
+		Hidden           bool                   `json:"hidden,omitempty"`
+		// PreviousMediaId stores the prior mediaId when a file is unmatched, to allow grouping in "resolved unmatched"
+		PreviousMediaId  int                    `json:"previousMediaId,omitempty"`
+		// ResolvedState marks special listing states (e.g., "unmatched") after actions
+		ResolvedState    string                 `json:"resolvedState,omitempty"`
 	}
 
 	// LocalFileMetadata holds metadata related to a media episode.
@@ -97,6 +107,8 @@ func newLocalFile(opath string, info *filesystem.SeparatedFilePath) *LocalFile {
 		Locked:  false,
 		Ignored: false,
 		MediaId: 0,
+		LinkSource:       "",
+		AutoMatchBlocked: false,
 	}
 
 	return localFile

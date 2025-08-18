@@ -9,9 +9,10 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useDebounce } from "@/hooks/use-debounce"
 import { useThemeSettings } from "@/lib/theme/hooks"
 import { useSetAtom } from "jotai/index"
-import { useAtom } from "jotai/react"
+import { useAtom, useAtomValue } from "jotai/react"
 import { AnimatePresence } from "motion/react"
 import React from "react"
+import { __mainLibrary_debouncedSearchInputAtom } from "@/app/(main)/(library)/_lib/handle-library-collection"
 
 
 type LibraryViewProps = {
@@ -38,6 +39,7 @@ export function LibraryView(props: LibraryViewProps) {
     } = props
 
     const ts = useThemeSettings()
+    const debouncedSearch = useAtomValue(__mainLibrary_debouncedSearchInputAtom)
 
     const [params, setParams] = useAtom(__mainLibrary_paramsAtom)
 
@@ -80,7 +82,7 @@ export function LibraryView(props: LibraryViewProps) {
 
             <PageWrapper key="library-collection-lists" className="p-4 space-y-8 relative z-[4]" data-library-collection-lists-container>
                 <AnimatePresence mode="wait" initial={false}>
-                    {!params.genre?.length ?
+                    {!(params.genre?.length || (debouncedSearch?.trim()?.length ?? 0) > 0) ?
                         <LibraryCollectionLists
                             key="library-collection-lists"
                             collectionList={collectionList}

@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,6 +19,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/labstack/echo/v4"
 	"github.com/samber/lo"
@@ -99,6 +102,487 @@ func (h *Handler) HandleGetAnimeEntry(c echo.Context) error {
 
 //----------------------------------------------------------------------------------------------------------------------
 
+// HandleCheckAnimeSeriesDirExists
+//
+//	@summary checks if a romaji-named series directory exists in any configured library path.
+//	@desc Uses AniList to fetch the romaji title for the given media ID, sanitizes it with sanitizePathName,
+//	@desc and then checks for a directory of that name under all library paths (primary and additional).
+//	@route /api/v1/library/anime-entry/dir-exists/{id} [GET]
+//	@param id - int - true - "AniList anime media ID"
+//	@returns map[string]any  // { exists: bool, name: string }
+func (h *Handler) HandleCheckAnimeSeriesDirExists(c echo.Context) error {
+
+	// Parse media ID
+	mId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	// Fetch anime to get romaji title
+	media, err := h.App.AnilistPlatform.GetAnime(c.Request().Context(), mId)
+	if err != nil || media == nil || media.Title == nil {
+		return h.RespondWithError(c, fmt.Errorf("failed to fetch anime details: %w", err))
+	}
+
+	romaji := strings.TrimSpace(lo.FromPtr(media.Title.Romaji))
+	if romaji == "" {
+		// Fall back to English, then Native, then id
+		romaji = firstNonEmpty(
+			strings.TrimSpace(lo.FromPtr(media.Title.English)),
+			strings.TrimSpace(lo.FromPtr(media.Title.Native)),
+			fmt.Sprintf("Anime %d", mId),
+		)
+	}
+
+	sanitized := sanitizePathName(romaji)
+
+	// Get all library paths from settings
+	libPaths, err := h.App.Database.GetAllLibraryPathsFromSettings()
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	// Check each path for existence (case-insensitive on name for portability)
+	exists := false
+	for _, base := range libPaths {
+		if strings.TrimSpace(base) == "" {
+			continue
+		}
+		candidate := filepath.Join(base, sanitized)
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			exists = true
+			break
+		}
+		// Fallback: scan directory entries and compare case-insensitively
+		if entries, err := os.ReadDir(base); err == nil {
+			for _, de := range entries {
+				if !de.IsDir() {
+					continue
+				}
+				if strings.EqualFold(de.Name(), sanitized) {
+					exists = true
+					break
+				}
+			}
+			if exists {
+				break
+			}
+		}
+	}
+
+	return h.RespondWithData(c, map[string]any{
+		"exists": exists,
+		"name":   sanitized,
+	})
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+
+// HandleRenameAnimeEntryFiles
+//
+//	@summary preview or execute standardized rename+move for a media's local files.
+//	@desc Moves all episodes to a single root folder named after the anime and renames to
+//	@desc "{ANIMENAME} - {XXX} - {EPISODETITLE}{ext}" (XXX is zero-padded to 3). Skips already-standardized files unless force=true.
+//	@route /api/v1/library/anime-entry/rename-files [POST]
+//	@returns []map[string]string
+func (h *Handler) HandleRenameAnimeEntryFiles(c echo.Context) error {
+	type body struct {
+		MediaId int  `json:"mediaId"`
+		DryRun  bool `json:"dryRun"`
+		Force   bool `json:"force"`
+	}
+
+	p := new(body)
+	if err := c.Bind(p); err != nil {
+		return h.RespondWithError(c, err)
+	}
+	if p.MediaId == 0 {
+		return h.RespondWithError(c, errors.New("mediaId is required"))
+	}
+
+	// Fetch local files
+	lfs, lfsId, err := db_bridge.GetLocalFiles(h.App.Database)
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	// Filter to media
+	files := lo.Filter(lfs, func(lf *anime.LocalFile, _ int) bool { return lf.MediaId == p.MediaId })
+	if len(files) == 0 {
+		return h.RespondWithError(c, errors.New("no local files for this media"))
+	}
+
+	// Resolve anime name from AniList (romaji preferred)
+	media, err := h.App.AnilistPlatform.GetAnime(c.Request().Context(), p.MediaId)
+	if err != nil || media == nil || media.Title == nil {
+		return h.RespondWithError(c, fmt.Errorf("failed to fetch anime details: %w", err))
+	}
+	animeName := firstNonEmpty(lo.FromPtr(media.Title.Romaji), lo.FromPtr(media.Title.English), lo.FromPtr(media.Title.Native))
+	if animeName == "" {
+		animeName = fmt.Sprintf("Anime %d", p.MediaId)
+	}
+	cleanAnimeName := sanitizePathName(animeName)
+	// Detect movies: name files without episode numbers or titles
+	isMovie := media.Format != nil && lo.FromPtr(media.Format) == anilist.MediaFormatMovie
+
+	// Compute common parent directory across all files, then target dir under it
+	commonParent := commonDirOf(files)
+	if commonParent == "" {
+		// fallback to first file's dir
+		commonParent = filepath.Dir(files[0].GetNormalizedPath())
+	}
+	targetDir := filepath.Join(commonParent, cleanAnimeName)
+
+	// Build plan
+	plan := make([]map[string]string, 0, len(files))
+	// if movie has multiple files, we will suffix with part index deterministically
+	// Create a stable order for determinism
+	sorted := append([]*anime.LocalFile(nil), files...)
+	slices.SortFunc(sorted, func(a, b *anime.LocalFile) int { return strings.Compare(a.GetNormalizedPath(), b.GetNormalizedPath()) })
+	partIndexByPath := map[string]int{}
+	if isMovie {
+		for i, f := range sorted {
+			partIndexByPath[f.GetNormalizedPath()] = i + 1
+		}
+	}
+	for _, f := range files {
+		from := f.GetNormalizedPath()
+		ext := filepath.Ext(from)
+		// Skip NCOP/NCED and other extra credit/opening files
+		if isExtraEpisode(from, f.ParsedData.EpisodeTitle) {
+			plan = append(plan, map[string]string{"from": from, "to": "", "reason": "filtered NCOP/NCED/extra"})
+			continue
+		}
+		epiNum := f.Metadata.Episode
+		if epiNum == 0 {
+			// try parsed episode
+			if n, err := strconv.Atoi(strings.TrimSpace(f.ParsedData.Episode)); err == nil {
+				epiNum = n
+			}
+		}
+		// Build destination filename
+		var name string
+		if isMovie {
+			// Single-file movie: just the series name. Multi-file: append part index.
+			name = cleanAnimeName
+			if len(files) > 1 {
+				idx := partIndexByPath[from]
+				name = fmt.Sprintf("%s - Part %02d", cleanAnimeName, idx)
+			}
+		} else {
+			if epiNum == 0 && !p.Force {
+				plan = append(plan, map[string]string{"from": from, "to": "", "reason": "missing episode number, skipped"})
+				continue
+			}
+			epiTitle := strings.TrimSpace(f.ParsedData.EpisodeTitle)
+			name = fmt.Sprintf("%s - %03d", cleanAnimeName, epiNum)
+			if epiTitle != "" {
+				name += " - " + sanitizeFileName(epiTitle)
+			}
+		}
+		to := filepath.Join(targetDir, name+ext)
+		// Skip if already standardized (same dir and same basename), unless force
+		if !p.Force && sameDirAndName(from, to) {
+			plan = append(plan, map[string]string{"from": from, "to": to, "reason": "already standardized"})
+			continue
+		}
+		plan = append(plan, map[string]string{"from": from, "to": to})
+	}
+
+	if p.DryRun {
+		return h.RespondWithData(c, plan)
+	}
+
+	// ... (rest of the code remains the same)
+	// Execute
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	for i, step := range plan {
+		from, to := step["from"], step["to"]
+		if to == "" {
+			continue
+		}
+		// Ensure parent dir
+		_ = os.MkdirAll(filepath.Dir(to), 0o755)
+		finalTo := to
+		// Avoid overwrite
+		if fileExists(finalTo) {
+			base := strings.TrimSuffix(filepath.Base(to), filepath.Ext(to))
+			ext := filepath.Ext(to)
+			j := 1
+			for {
+				candidate := filepath.Join(filepath.Dir(to), fmt.Sprintf("%s (%d)%s", base, j, ext))
+				if !fileExists(candidate) {
+					finalTo = candidate
+					break
+				}
+				j++
+			}
+		}
+		if err := os.Rename(from, finalTo); err != nil {
+			plan[i]["error"] = err.Error()
+			continue
+		}
+		// Update in-memory path
+		if lf, ok := lo.Find(lfs, func(x *anime.LocalFile) bool { return x.GetNormalizedPath() == from }); ok {
+			lf.Path = finalTo
+		}
+		plan[i]["to"] = finalTo
+	}
+
+	// Persist updated local files slice
+	if _, err := db_bridge.SaveLocalFiles(h.App.Database, lfsId, lfs); err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	return h.RespondWithData(c, plan)
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+
+// HandleListRenameCandidates
+//
+//	@summary lists series that likely need standardization and those manually resolved.
+//	@route /api/v1/library/anime/rename-candidates [GET]
+//	@returns map
+func (h *Handler) HandleListRenameCandidates(c echo.Context) error {
+	lfs, _, err := db_bridge.GetLocalFiles(h.App.Database)
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	// Group by MediaId
+	byMedia := lo.GroupBy(lfs, func(lf *anime.LocalFile) int { return lf.MediaId })
+	unresolved := make([]int, 0)
+	manualSet := map[int]struct{}{}
+	ignoredSet := map[int]struct{}{}
+
+	for mid, files := range byMedia {
+		if mid == 0 || len(files) == 0 {
+			continue
+		}
+		// manually resolved heuristic: any locked file
+		if lo.SomeBy(files, func(f *anime.LocalFile) bool { return f.Locked }) {
+			manualSet[mid] = struct{}{}
+		}
+		// ignored heuristic: any file marked ignored
+		if lo.SomeBy(files, func(f *anime.LocalFile) bool { return f.Ignored }) {
+			ignoredSet[mid] = struct{}{}
+		}
+		// unresolved heuristic: files span multiple dirs or names not following pattern
+		if needsStandardization(files) {
+			unresolved = append(unresolved, mid)
+		}
+	}
+
+	manual := make([]int, 0, len(manualSet))
+	for k := range manualSet {
+		manual = append(manual, k)
+	}
+	ignored := make([]int, 0, len(ignoredSet))
+	for k := range ignoredSet {
+		ignored = append(ignored, k)
+	}
+
+	res := map[string]interface{}{
+		"unresolved":        unresolved,
+		"manuallyResolved":  manual,
+		"manuallyResolvedN": len(manual),
+		"ignored":           ignored,
+		"ignoredN":          len(ignored),
+	}
+	return h.RespondWithData(c, res)
+}
+
+// ----------------- helpers -----------------
+
+func firstNonEmpty(v ...string) string {
+	for _, s := range v {
+		if strings.TrimSpace(s) != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func fileExists(p string) bool {
+	if _, err := os.Stat(p); err == nil {
+		return true
+	} else if errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
+	return false
+}
+
+func isSymlink(p string) bool {
+	info, err := os.Lstat(p)
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeSymlink != 0
+}
+
+func removeSymlinkAndTarget(p string) {
+	info, err := os.Lstat(p)
+	if err != nil {
+		return
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		// resolve target relative to link dir if needed
+		target, err := os.Readlink(p)
+		if err == nil {
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(p), target)
+			}
+			_ = os.Remove(p)
+			_ = os.Remove(target)
+			return
+		}
+		_ = os.Remove(p)
+		return
+	}
+	_ = os.Remove(p)
+}
+
+func sanitizePathName(s string) string {
+	s = strings.TrimSpace(s)
+	// forbid path separators and control chars
+	s = strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' || r == ':' || r == '|' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' {
+			return '-'
+		}
+		if r == 0 || r == utf8.RuneError || unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+	return strings.TrimSpace(s)
+}
+
+func sanitizeFileName(s string) string { return sanitizePathName(s) }
+
+func sameDirAndName(from, to string) bool {
+	return filepath.Dir(from) == filepath.Dir(to) && filepath.Base(from) == filepath.Base(to)
+}
+
+func commonDirOf(files []*anime.LocalFile) string {
+	if len(files) == 0 {
+		return ""
+	}
+	dirs := lo.Map(files, func(f *anime.LocalFile, _ int) string { return filepath.Dir(f.GetNormalizedPath()) })
+	base := dirs[0]
+	for _, d := range dirs[1:] {
+		for !strings.HasPrefix(d, base) && base != string(filepath.Separator) {
+			base = filepath.Dir(base)
+		}
+	}
+	return base
+}
+
+func needsStandardization(files []*anime.LocalFile) bool {
+	if len(files) == 0 {
+		return false
+	}
+	// multiple dirs?
+	dirs := lo.Uniq(lo.Map(files, func(f *anime.LocalFile, _ int) string { return filepath.Dir(f.GetNormalizedPath()) }))
+	if len(dirs) > 1 {
+		return true
+	}
+	// simple pattern: presence of non-standard names
+	standardLike := func(name string) bool {
+		name = strings.TrimSuffix(name, filepath.Ext(name))
+		// contains zero-padded 3-digit pattern ' - ddd' as a proxy
+		return strings.Contains(name, " - ") && has3DigitsSegment(name)
+	}
+	return lo.SomeBy(files, func(f *anime.LocalFile) bool { return !standardLike(filepath.Base(f.GetNormalizedPath())) })
+}
+
+func has3DigitsSegment(s string) bool {
+	// very lightweight check for 3 consecutive digits
+	for i := 0; i+2 < len(s); i++ {
+		if s[i] >= '0' && s[i] <= '9' && s[i+1] >= '0' && s[i+1] <= '9' && s[i+2] >= '0' && s[i+2] <= '9' {
+			return true
+		}
+	}
+	return false
+}
+
+func isExtraEpisode(path string, episodeTitle string) bool {
+	episodeTitle = strings.ToLower(episodeTitle)
+	base := strings.ToLower(filepath.Base(path))
+	// Creditless openings/endings and common extras
+	if strings.Contains(episodeTitle, "ncop") || strings.Contains(episodeTitle, "nced") || strings.Contains(episodeTitle, "creditless") {
+		return true
+	}
+	if strings.Contains(base, "ncop") || strings.Contains(base, "nced") || strings.Contains(base, "creditless") {
+		return true
+	}
+	// Explicit extras we don't want to rename as episodes
+	if strings.Contains(episodeTitle, "ncop") || strings.Contains(episodeTitle, "nced") || strings.Contains(episodeTitle, "opening") || strings.Contains(episodeTitle, "ending") {
+		return true
+	}
+	if strings.Contains(base, "opening") || strings.Contains(base, "ending") {
+		return true
+	}
+	return false
+}
+
+func deriveBestSuggestionTitle(files []*anime.LocalFile) string {
+	if len(files) == 0 {
+		return ""
+	}
+	// Prefer parsed title
+	title := strings.TrimSpace(files[0].GetParsedTitle())
+	title = stripCommonTags(title)
+	if title != "" && !isGenericFolderName(title) {
+		return title
+	}
+	// Fallback to common parent folder name
+	baseDir := filepath.Base(commonDirOf(files))
+	baseDir = stripCommonTags(baseDir)
+	if baseDir != "" && !isGenericFolderName(baseDir) {
+		return baseDir
+	}
+	return title
+}
+
+func stripCommonTags(s string) string {
+	s = strings.TrimSpace(s)
+	// Remove bracketed groups like [SubsGroup], (1080p), {BD}
+	for {
+		i := strings.IndexAny(s, "[{")
+		j := strings.IndexAny(s, "]}")
+		if i >= 0 && j > i {
+			s = strings.TrimSpace(s[:i] + s[j+1:])
+			continue
+		}
+		break
+	}
+	// Remove common tags and episode labels
+	lowers := []string{"- episode", "episode", "- ep", " ep ", "- epsiode", "- ova", " ova ", "- special", " special ", "- complete", " complete "}
+	ls := strings.ToLower(s)
+	for _, tag := range lowers {
+		if idx := strings.Index(ls, tag); idx >= 0 {
+			s = strings.TrimSpace(s[:idx])
+			ls = strings.ToLower(s)
+		}
+	}
+	// Trim trailing dashes
+	s = strings.TrimSpace(strings.TrimSuffix(s, "-"))
+	return s
+}
+
+func isGenericFolderName(s string) bool {
+	ls := strings.ToLower(strings.TrimSpace(s))
+	switch ls {
+	case "complete", "completed", "season", "season 1", "season 2", "s1", "s2", "tv", "bd", "bluray":
+		return true
+	}
+	return false
+}
+
 // HandleAnimeEntryBulkAction
 //
 //	@summary perform given action on all the local files for the given media id.
@@ -110,7 +594,7 @@ func (h *Handler) HandleAnimeEntryBulkAction(c echo.Context) error {
 
 	type body struct {
 		MediaId int    `json:"mediaId"`
-		Action  string `json:"action"` // "unmatch" or "toggle-lock"
+		Action  string `json:"action"` // "unmatch", "toggle-lock", "unlink", or "delete-files"
 	}
 
 	p := new(body)
@@ -136,6 +620,9 @@ func (h *Handler) HandleAnimeEntryBulkAction(c echo.Context) error {
 	case "unmatch":
 		lfs = lop.Map(lfs, func(item *anime.LocalFile, _ int) *anime.LocalFile {
 			if item.MediaId == p.MediaId && p.MediaId != 0 {
+				// Record prior linkage for resolved-unmatched view
+				item.PreviousMediaId = item.MediaId
+				item.ResolvedState = "unmatched"
 				item.MediaId = 0
 				item.Locked = false
 				item.Ignored = false
@@ -151,6 +638,40 @@ func (h *Handler) HandleAnimeEntryBulkAction(c echo.Context) error {
 			}
 			return item
 		})
+	case "unlink":
+		// Remove symlinked files only, and unmatch everything
+		kept := make([]*anime.LocalFile, 0, len(lfs))
+		for _, item := range lfs {
+			if item.MediaId != p.MediaId || p.MediaId == 0 {
+				kept = append(kept, item)
+				continue
+			}
+			// If file is a symlink, remove it and drop from list
+			if isSymlink(item.GetNormalizedPath()) {
+				_ = os.Remove(item.GetNormalizedPath())
+				continue // drop entry for deleted link
+			}
+			// Unmatch non-symlink files without deleting
+			item.PreviousMediaId = item.MediaId
+			item.ResolvedState = "unmatched"
+			item.MediaId = 0
+			item.Locked = false
+			item.Ignored = false
+			kept = append(kept, item)
+		}
+		lfs = kept
+	case "delete-files":
+		// Delete files from disk (links and regular files) and remove entries
+		kept := make([]*anime.LocalFile, 0, len(lfs))
+		for _, item := range lfs {
+			if item.MediaId != p.MediaId || p.MediaId == 0 {
+				kept = append(kept, item)
+				continue
+			}
+			removeSymlinkAndTarget(item.GetNormalizedPath())
+			// do not append: entry deleted
+		}
+		lfs = kept
 	}
 
 	// Save the local files
@@ -281,8 +802,8 @@ func (h *Handler) HandleFetchAnimeEntrySuggestions(c echo.Context) error {
 		return h.RespondWithData(c, []*anilist.BaseAnime{})
 	}
 
-	// Get a safe parsed title from the first unmatched file
-	title := selectedLfs[0].GetParsedTitle()
+	// Derive a robust title for suggestions
+	title := deriveBestSuggestionTitle(selectedLfs)
 	if strings.TrimSpace(title) == "" {
 		entriesSuggestionsCache.Set(b.Dir, []*anilist.BaseAnime{})
 		return h.RespondWithData(c, []*anilist.BaseAnime{})
@@ -556,7 +1077,81 @@ func (h *Handler) HandleToggleAnimeEntrySilenceStatus(c echo.Context) error {
 	return h.RespondWithData(c, true)
 }
 
-//-----------------------------------------------------------------------------------------------------------------------------
+// HandleHideAnimeEntry
+//
+//	@summary hides a media entry (all its local files) from resolved views.
+//	@route /api/v1/library/anime-entry/hide [POST]
+//	@returns bool
+func (h *Handler) HandleHideAnimeEntry(c echo.Context) error {
+
+	type body struct {
+		MediaId int `json:"mediaId"`
+	}
+
+	b := new(body)
+	if err := c.Bind(b); err != nil {
+		return h.RespondWithError(c, err)
+	}
+	if b.MediaId == 0 {
+		return h.RespondWithError(c, errors.New("mediaId is required"))
+	}
+
+	lfs, lfsId, err := db_bridge.GetLocalFiles(h.App.Database)
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	// Set Hidden=true for all local files of this media
+	for _, lf := range lfs {
+		if lf.MediaId == b.MediaId {
+			lf.Hidden = true
+		}
+	}
+
+	if _, err := db_bridge.SaveLocalFiles(h.App.Database, lfsId, lfs); err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	return h.RespondWithData(c, true)
+}
+
+// HandleUnhideAnimeEntry
+//
+//	@summary unhides a media entry (all its local files) so it appears in resolved views again.
+//	@route /api/v1/library/anime-entry/unhide [POST]
+//	@returns bool
+func (h *Handler) HandleUnhideAnimeEntry(c echo.Context) error {
+
+	type body struct {
+		MediaId int `json:"mediaId"`
+	}
+
+	b := new(body)
+	if err := c.Bind(b); err != nil {
+		return h.RespondWithError(c, err)
+	}
+	if b.MediaId == 0 {
+		return h.RespondWithError(c, errors.New("mediaId is required"))
+	}
+
+	lfs, lfsId, err := db_bridge.GetLocalFiles(h.App.Database)
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	// Set Hidden=false for all local files of this media
+	for _, lf := range lfs {
+		if lf.MediaId == b.MediaId {
+			lf.Hidden = false
+		}
+	}
+
+	if _, err := db_bridge.SaveLocalFiles(h.App.Database, lfsId, lfs); err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	return h.RespondWithData(c, true)
+}
 
 // HandleUpdateAnimeEntryProgress
 //

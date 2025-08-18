@@ -3,10 +3,12 @@ import { __mainLibrary_paramsAtom } from "@/app/(main)/(library)/_lib/handle-lib
 import { MediaCardLazyGrid } from "@/app/(main)/_features/media/_components/media-card-grid"
 import { MediaEntryCard } from "@/app/(main)/_features/media/_components/media-entry-card"
 import { PageWrapper } from "@/components/shared/page-wrapper"
-import { IconButton } from "@/components/ui/button"
+import { IconButton, Button } from "@/components/ui/button"
+import { LuffyError } from "@/components/shared/luffy-error"
 import { DropdownMenu, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { getLibraryCollectionTitle } from "@/lib/server/utils"
-import { useAtom } from "jotai/react"
+import { useAtom, useSetAtom } from "jotai/react"
+import { __mainLibrary_searchInputAtom } from "@/app/(main)/(library)/_lib/handle-library-collection"
 import React from "react"
 import { LuListFilter } from "react-icons/lu"
 
@@ -45,6 +47,8 @@ export function LibraryCollectionFilteredLists({ collectionList, isLoading, stre
 }) {
 
     // const params = useAtomValue(__mainLibrary_paramsAtom)
+    const total = collectionList?.flatMap(n => n.entries)?.filter(Boolean)?.length ?? 0
+    const clearSearch = useSetAtom(__mainLibrary_searchInputAtom)
 
     return (
         <PageWrapper
@@ -59,6 +63,14 @@ export function LibraryCollectionFilteredLists({ collectionList, isLoading, stre
                     duration: 0.25,
                 },
             }}>
+            {total === 0 && (
+                <LuffyError title="No results">
+                    <p className="text-[--muted]">Try a different search or adjust your filters.</p>
+                    <div className="mt-2">
+                        <Button intent="white-outline" size="sm" onClick={() => clearSearch("")}>Clear search</Button>
+                    </div>
+                </LuffyError>
+            )}
             {/*<h3 className="text-center truncate">*/}
             {/*    {params.genre?.join(", ")}*/}
             {/*</h3>*/}

@@ -9,6 +9,8 @@ import { __scanner_modalIsOpen } from "@/app/(main)/(library)/_containers/scanne
 import { __unknownMedia_drawerIsOpen } from "@/app/(main)/(library)/_containers/unknown-media-manager"
 import { __unmatchedFileManagerIsOpen } from "@/app/(main)/(library)/_containers/unmatched-file-manager"
 import { __library_viewAtom } from "@/app/(main)/(library)/_lib/library-view.atoms"
+import { __mainLibrary_searchInputAtom } from "@/app/(main)/(library)/_lib/handle-library-collection"
+import { TextInput } from "@/components/ui/text-input/text-input"
 import { useServerStatus } from "@/app/(main)/_hooks/use-server-status"
 import { SeaLink } from "@/components/shared/sea-link"
 import { Button, IconButton } from "@/components/ui/button"
@@ -19,12 +21,14 @@ import { ThemeLibraryScreenBannerType, useThemeSettings } from "@/lib/theme/hook
 import { useAtom, useSetAtom } from "jotai/react"
 import React from "react"
 import { BiCollection, BiDotsVerticalRounded, BiFolder } from "react-icons/bi"
-import { FiSearch } from "react-icons/fi"
+import { FiSearch, FiX } from "react-icons/fi"
 import { IoLibrary, IoLibrarySharp } from "react-icons/io5"
 import { MdOutlineVideoLibrary } from "react-icons/md"
 import { PiClockCounterClockwiseFill } from "react-icons/pi"
 import { TbFileSad, TbReload } from "react-icons/tb"
 import { PluginAnimeLibraryDropdownItems } from "../../_features/plugin/actions/plugin-actions"
+import { __resolvedAnimeManagerIsOpen, ResolvedAnimeManager } from "./resolved-anime-manager"
+import { useListLinkedAnimeFiles } from "@/api/hooks/anime_linked.hooks"
 
 export type LibraryToolbarProps = {
     collectionList: Anime_LibraryCollectionList[]
@@ -58,12 +62,17 @@ export function LibraryToolbar(props: LibraryToolbarProps) {
     const setIgnoredFileManagerOpen = useSetAtom(__ignoredFileManagerIsOpen)
     const setUnknownMediaManagerOpen = useSetAtom(__unknownMedia_drawerIsOpen)
     const setPlaylistsModalOpen = useSetAtom(__playlists_modalOpenAtom)
+    const [resolvedManagerOpen, setResolvedManagerOpen] = useAtom(__resolvedAnimeManagerIsOpen)
 
     const [libraryView, setLibraryView] = useAtom(__library_viewAtom)
+    const [searchInput, setSearchInput] = useAtom(__mainLibrary_searchInputAtom)
 
     const { mutate: openInExplorer } = useOpenInExplorer()
 
     const hasLibraryPath = !!status?.settings?.library?.libraryPath
+
+    // Fetch only the total count for linked files (pageSize=1 keeps payload small)
+    const { data: linkedSummary } = useListLinkedAnimeFiles({ page: 1, pageSize: 1 })
 
     return (
         <>
@@ -75,9 +84,41 @@ export function LibraryToolbar(props: LibraryToolbarProps) {
                 data-library-toolbar-top-padding
             ></div>}
             <div className="flex flex-wrap w-full justify-end gap-2 p-4 relative z-[10]" data-library-toolbar-container>
+                {/* Left-aligned section */}
+                <div className="flex items-center gap-2 mr-auto" data-library-toolbar-left>
+                    <Button
+                        data-library-toolbar-resolved-anime-button
+                        intent="white"
+                        leftIcon={<IoLibrarySharp />}
+                        onClick={() => setResolvedManagerOpen(true)}
+                    >
+                        Resolved anime ({(linkedSummary?.total ?? 0).toLocaleString()})
+                    </Button>
+                </div>
                 <div className="flex flex-1" data-library-toolbar-spacer></div>
                 {(hasEntries) && (
                     <>
+                        <div className="mr-auto max-w-md w-full flex items-center gap-2" data-library-toolbar-search>
+                            <TextInput
+                                placeholder="Search by title..."
+                                leftIcon={<FiSearch />}
+                                value={searchInput}
+                                onValueChange={setSearchInput}
+                                // Use default intent (basic)
+                                onKeyDown={(e) => {
+                                    if (e.key === "Escape") setSearchInput("")
+                                }}
+                            />
+                            {!!searchInput?.length && (
+                                <IconButton
+                                    intent="white-basic"
+                                    size="sm"
+                                    icon={<FiX />}
+                                    onClick={() => setSearchInput("")}
+                                    aria-label="Clear search"
+                                />
+                            )}
+                        </div>
                         <Tooltip
                             trigger={<IconButton
                                 data-library-toolbar-switch-view-button
@@ -120,6 +161,7 @@ export function LibraryToolbar(props: LibraryToolbarProps) {
                 >
                     Resolve unmatched ({unmatchedLocalFiles.length})
                 </Button>}
+                {/* Resolved Anime button moved to the left section above */}
                 {(unknownGroups.length > 0) && <Button
                     data-library-toolbar-unknown-button
                     intent="warning"
@@ -184,6 +226,8 @@ export function LibraryToolbar(props: LibraryToolbarProps) {
                     </DropdownMenu>}
 
             </div>
+            {/* Mount the Resolved Anime manager drawer */}
+            <ResolvedAnimeManager />
         </>
     )
 

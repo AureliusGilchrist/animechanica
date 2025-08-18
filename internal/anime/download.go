@@ -1,3 +1,6 @@
+//go:build disabled
+// +build disabled
+
 package anime
 
 import (
@@ -13,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	hibikeanime "github.com/5rahim/hibike/pkg/extension/anime"
-	hibikeonlinestream "github.com/5rahim/hibike/pkg/extension/onlinestream"
+	hibikeanime "seanime/internal/extension/hibike/anime"
+	hibikeonlinestream "seanime/internal/extension/hibike/onlinestream"
 	"github.com/rs/zerolog"
 )
 

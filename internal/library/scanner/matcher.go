@@ -128,6 +128,16 @@ func (m *Matcher) matchLocalFileWithMedia(lf *anime.LocalFile) {
 		m.ScanSummaryLogger.LogFileNotMatched(lf, "Already matched")
 		return
 	}
+	// Respect auto-match block flag: do not automatically match this file
+	if lf.AutoMatchBlocked {
+		if m.ScanLogger != nil {
+			m.ScanLogger.LogMatcher(zerolog.DebugLevel).
+				Str("filename", lf.Name).
+				Msg("Auto-match blocked, skipping")
+		}
+		m.ScanSummaryLogger.LogFileNotMatched(lf, "Auto-match blocked")
+		return
+	}
 	// Check if the local file has a title
 	if lf.GetParsedTitle() == "" {
 		if m.ScanLogger != nil {
@@ -163,6 +173,9 @@ func (m *Matcher) matchLocalFileWithMedia(lf *anime.LocalFile) {
 	m.ScanSummaryLogger.LogDebug(lf, util.InlineSpewT(titleVariations))
 
 	//------------------
+
+	// Helper: try to find a best match from folder context (series folder and its children)
+	folderMediaMatch, folderRating, folderFound := m.getFolderContextBestMatch(lf)
 
 	var levMatch *comparison.LevenshteinResult
 	var sdMatch *comparison.SorensenDiceResult
@@ -385,6 +398,39 @@ func (m *Matcher) matchLocalFileWithMedia(lf *anime.LocalFile) {
 	found = event.Found
 	finalRating = event.Score
 
+	// Folder-context enforcement and fallback
+	if folderFound && folderRating >= m.Threshold {
+		// If filename-based match disagrees with folder-based series, reject cross-series matches
+		if found && mediaMatch != nil && mediaMatch.ID != folderMediaMatch.ID {
+			if m.ScanLogger != nil {
+				m.ScanLogger.LogMatcher(zerolog.WarnLevel).
+					Str("filename", lf.Name).
+					Str("folderBest", folderMediaMatch.GetTitleSafe()).
+					Int("folderId", folderMediaMatch.ID).
+					Str("fileBest", mediaMatch.GetTitleSafe()).
+					Int("fileId", mediaMatch.ID).
+					Msg("Rejected match: disagrees with series folder context")
+			}
+			m.ScanSummaryLogger.LogFileNotMatched(lf, fmt.Sprintf("Disagrees with folder context: folder '%s' (id %d) vs file best '%s' (id %d)", folderMediaMatch.GetTitleSafe(), folderMediaMatch.ID, mediaMatch.GetTitleSafe(), mediaMatch.ID))
+			lf.MediaId = 0
+			return
+		}
+		// If no solid filename match, fall back to folder match
+		if !found || finalRating < m.Threshold || mediaMatch == nil {
+			mediaMatch = folderMediaMatch
+			found = true
+			finalRating = folderRating
+			if m.ScanLogger != nil {
+				m.ScanLogger.LogMatcher(zerolog.DebugLevel).
+					Str("filename", lf.Name).
+					Str("title", mediaMatch.GetTitleSafe()).
+					Int("id", mediaMatch.ID).
+					Float64("rating", finalRating).
+					Msg("Using folder-context match")
+			}
+		}
+	}
+
 	// Check if the hook overrode the match
 	if event.DefaultPrevented {
 		if m.ScanLogger != nil {
@@ -447,9 +493,190 @@ func (m *Matcher) matchLocalFileWithMedia(lf *anime.LocalFile) {
 	m.ScanSummaryLogger.LogSuccessfullyMatched(lf, mediaMatch.ID)
 
 	lf.MediaId = mediaMatch.ID
+	// Mark as automatically linked by the scanner
+	lf.LinkSource = "auto"
 }
 
 //----------------------------------------------------------------------------------------------------------------------
+
+// getFolderContextBestMatch tries to pick a best media match using the parsed folder names
+// (series folder and its children). It mirrors the main matching algorithm but only uses
+// folder-derived title variations.
+func (m *Matcher) getFolderContextBestMatch(lf *anime.LocalFile) (*anime.NormalizedMedia, float64, bool) {
+	// Collect folder title variations (prefer parsed Title, then Original)
+	folderTitles := make([]*string, 0)
+	for _, p := range lf.ParsedFolderData {
+		if p == nil {
+			continue
+		}
+		if len(p.Title) > 0 {
+			v := p.Title
+			folderTitles = append(folderTitles, &v)
+			continue
+		}
+		if len(p.Original) > 0 {
+			v := p.Original
+			folderTitles = append(folderTitles, &v)
+		}
+	}
+	if len(folderTitles) == 0 {
+		return nil, 0, false
+	}
+
+	var finalTitle *string
+	var finalScore float64
+
+	if m.Algorithm == "jaccard" {
+		compResults := lop.Map(folderTitles, func(title *string, _ int) *comparison.JaccardResult {
+			var eng, rom, syn *comparison.JaccardResult
+			if len(m.MediaContainer.romTitles) > 0 {
+				if r, found := comparison.FindBestMatchWithJaccard(title, m.MediaContainer.romTitles); found {
+					rom = r
+				}
+			}
+			if len(m.MediaContainer.engTitles) > 0 {
+				if e, found := comparison.FindBestMatchWithJaccard(title, m.MediaContainer.engTitles); found {
+					eng = e
+				}
+			}
+			if len(m.MediaContainer.synonyms) > 0 {
+				if s, found := comparison.FindBestMatchWithJaccard(title, m.MediaContainer.synonyms); found {
+					syn = s
+				}
+			}
+			epsilon := 0.02
+			candidate := rom
+			if candidate == nil {
+				if eng != nil && (syn == nil || eng.Rating >= syn.Rating) {
+					candidate = eng
+				} else {
+					candidate = syn
+				}
+			} else {
+				if eng != nil && eng.Rating > candidate.Rating+epsilon {
+					candidate = eng
+				}
+				if syn != nil && syn.Rating > candidate.Rating+epsilon {
+					candidate = syn
+				}
+			}
+			return candidate
+		})
+		best := lo.Reduce(compResults, func(prev, curr *comparison.JaccardResult, _ int) *comparison.JaccardResult {
+			if prev.Rating > curr.Rating {
+				return prev
+			} else {
+				return curr
+			}
+		}, compResults[0])
+		finalTitle = best.Value
+		finalScore = best.Rating
+	} else if m.Algorithm == "sorensen-dice" {
+		compResults := lop.Map(folderTitles, func(title *string, _ int) *comparison.SorensenDiceResult {
+			var eng, rom, syn *comparison.SorensenDiceResult
+			if len(m.MediaContainer.romTitles) > 0 {
+				if r, found := comparison.FindBestMatchWithSorensenDice(title, m.MediaContainer.romTitles); found {
+					rom = r
+				}
+			}
+			if len(m.MediaContainer.engTitles) > 0 {
+				if e, found := comparison.FindBestMatchWithSorensenDice(title, m.MediaContainer.engTitles); found {
+					eng = e
+				}
+			}
+			if len(m.MediaContainer.synonyms) > 0 {
+				if s, found := comparison.FindBestMatchWithSorensenDice(title, m.MediaContainer.synonyms); found {
+					syn = s
+				}
+			}
+			epsilon := 0.02
+			candidate := rom
+			if candidate == nil {
+				if eng != nil && (syn == nil || eng.Rating >= syn.Rating) {
+					candidate = eng
+				} else {
+					candidate = syn
+				}
+			} else {
+				if eng != nil && eng.Rating > candidate.Rating+epsilon {
+					candidate = eng
+				}
+				if syn != nil && syn.Rating > candidate.Rating+epsilon {
+					candidate = syn
+				}
+			}
+			return candidate
+		})
+		best := lo.Reduce(compResults, func(prev, curr *comparison.SorensenDiceResult, _ int) *comparison.SorensenDiceResult {
+			if prev.Rating > curr.Rating {
+				return prev
+			} else {
+				return curr
+			}
+		}, compResults[0])
+		finalTitle = best.Value
+		finalScore = best.Rating
+	} else {
+		// Levenshtein path: compute Sorensen-Dice score on the chosen title for comparability
+		levCompResults := lop.Map(folderTitles, func(title *string, _ int) *comparison.LevenshteinResult {
+			var eng, rom, syn *comparison.LevenshteinResult
+			if len(m.MediaContainer.romTitles) > 0 {
+				if r, found := comparison.FindBestMatchWithLevenshtein(title, m.MediaContainer.romTitles); found {
+					rom = r
+				}
+			}
+			if len(m.MediaContainer.engTitles) > 0 {
+				if e, found := comparison.FindBestMatchWithLevenshtein(title, m.MediaContainer.engTitles); found {
+					eng = e
+				}
+			}
+			if len(m.MediaContainer.synonyms) > 0 {
+				if s, found := comparison.FindBestMatchWithLevenshtein(title, m.MediaContainer.synonyms); found {
+					syn = s
+				}
+			}
+			epsilon := 1
+			candidate := rom
+			if candidate == nil {
+				if eng != nil && (syn == nil || eng.Distance <= syn.Distance) {
+					candidate = eng
+				} else {
+					candidate = syn
+				}
+			} else {
+				if eng != nil && eng.Distance+epsilon < candidate.Distance {
+					candidate = eng
+				}
+				if syn != nil && syn.Distance+epsilon < candidate.Distance {
+					candidate = syn
+				}
+			}
+			return candidate
+		})
+		best := lo.Reduce(levCompResults, func(prev, curr *comparison.LevenshteinResult, _ int) *comparison.LevenshteinResult {
+			if prev.Distance < curr.Distance {
+				return prev
+			} else {
+				return curr
+			}
+		}, levCompResults[0])
+		// compute comparable Sorensen-Dice rating for logging/threshold
+		dice := metrics.NewSorensenDice()
+		dice.CaseSensitive = false
+		dice.NgramSize = 1
+		finalTitle = best.Value
+		finalScore = dice.Compare(*best.OriginalValue, *best.Value)
+	}
+
+	if finalTitle == nil {
+		return nil, 0, false
+	}
+	media, ok := m.MediaContainer.GetMediaFromTitleOrSynonym(finalTitle)
+	if !ok || media == nil {
+		return nil, 0, false
+	}
+	return media, finalScore, true
+}
 
 // validateMatches compares groups of local files' titles with the media titles and un-matches the local files that have a lower rating than the highest rating.
 func (m *Matcher) validateMatches() {

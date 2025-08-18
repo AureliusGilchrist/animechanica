@@ -281,8 +281,7 @@ export function AnimeEntryCardNextAiring(props: AnimeEntryCardNextAiringProps) {
             </div>
         </>
     )
-}
-
+} // <--- Added missing closing brace
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -300,6 +299,7 @@ type MediaEntryCardBodyProps = {
     bannerImage?: string
     isAdult?: boolean
     showLibraryBadge?: boolean
+    partialLibrary?: boolean
     children?: React.ReactNode
     blurAdultContent?: boolean
 }
@@ -320,6 +320,7 @@ export function MediaEntryCardBody(props: MediaEntryCardBodyProps) {
         bannerImage,
         isAdult,
         showLibraryBadge,
+        partialLibrary,
         children,
         blurAdultContent,
         ...rest
@@ -366,8 +367,8 @@ export function MediaEntryCardBody(props: MediaEntryCardBodyProps) {
                     {(showLibraryBadge) &&
                         <div data-media-entry-card-body-library-badge className="absolute z-[1] left-0 top-0">
                             <Badge
-                                size="xl" intent="warning-solid"
-                                className="rounded-[--radius] rounded-bl-none rounded-tr-none text-orange-900"
+                                size="xl" intent={partialLibrary ? "primary-solid" : "warning-solid"}
+                                className="rounded-[--radius] rounded-bl-none rounded-tr-none"
                             ><IoLibrarySharp /></Badge>
                         </div>}
 

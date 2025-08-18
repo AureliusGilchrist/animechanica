@@ -27,6 +27,19 @@ type Account struct {
 }
 
 // +---------------------+
+// |   User Profile      |
+// +---------------------+
+
+// UserProfile stores per-account profile customizations.
+// Keyed by Username to align with current session usage.
+type UserProfile struct {
+	BaseModel
+	Username    string `gorm:"column:username;uniqueIndex" json:"username"`
+	BannerURL   string `gorm:"column:banner_url" json:"bannerUrl"`
+	Description string `gorm:"column:description;type:text" json:"description"`
+}
+
+// +---------------------+
 // |     LocalFiles      |
 // +---------------------+
 
@@ -233,6 +246,31 @@ type Mal struct {
 }
 
 // +---------------------+
+// |    Achievements     |
+// +---------------------+
+
+// Achievement is the catalog of all possible achievements.
+type Achievement struct {
+	BaseModel
+	Key         string `gorm:"column:key;uniqueIndex" json:"key"`
+	Name        string `gorm:"column:name" json:"name"`
+	Description string `gorm:"column:description" json:"description"`
+	Icon        string `gorm:"column:icon" json:"icon"`
+	Tier        string `gorm:"column:tier" json:"tier"`     // e.g., bronze, silver, gold, platinum, diamond
+	Points      int    `gorm:"column:points" json:"points"` // gamification points
+	Category    string `gorm:"column:category" json:"category"`
+}
+
+// UserAchievement links a user to earned/progress on an achievement.
+type UserAchievement struct {
+	BaseModel
+	Username       string     `gorm:"column:username;index" json:"username"`
+	AchievementKey string     `gorm:"column:achievement_key;index" json:"achievementKey"`
+	Progress       int        `gorm:"column:progress" json:"progress"`
+	EarnedAt       *time.Time `gorm:"column:earned_at" json:"earnedAt"`
+}
+
+// +---------------------+
 // |    Scan Summary     |
 // +---------------------+
 
@@ -338,7 +376,7 @@ type Theme struct {
 }
 
 // +---------------------+
-// |      Playlist       |
+// |     Playlist       |
 // +---------------------+
 
 type PlaylistEntry struct {

@@ -28,6 +28,7 @@ type BaseCollectionSorting =
     | "PROGRESS_DESC"
     | "TITLE"
     | "TITLE_DESC"
+    | "SERIES_ORDER"
 
 
 type CollectionSorting<T extends CollectionType> = BaseCollectionSorting | (T extends "anime" ?
@@ -76,6 +77,7 @@ export const COLLECTION_SORTING_OPTIONS = [
     { label: "Lowest score", value: "SCORE" },
     { label: "Title", value: "TITLE" },
     { label: "Title (Z-A)", value: "TITLE_DESC" },
+    { label: "Series order, then A→Z", value: "SERIES_ORDER" },
     { label: "Highest progress", value: "PROGRESS_DESC" },
     { label: "Lowest progress", value: "PROGRESS" },
     { label: "Started recently", value: "START_DATE_DESC" },
@@ -93,12 +95,14 @@ export const ANIME_COLLECTION_SORTING_OPTIONS = [
     { label: "Least unwatched episodes", value: "UNWATCHED_EPISODES" },
     { label: "Most recent watch", value: "LAST_WATCHED_DESC" },
     { label: "Least recent watch", value: "LAST_WATCHED" },
+    { label: "Series order, then A→Z", value: "SERIES_ORDER" },
     ...COLLECTION_SORTING_OPTIONS,
 ]
 
 export const MANGA_COLLECTION_SORTING_OPTIONS = [
     { label: "Most unread chapters", value: "UNREAD_CHAPTERS_DESC" },
     { label: "Least unread chapters", value: "UNREAD_CHAPTERS" },
+    { label: "Series order, then A→Z", value: "SERIES_ORDER" },
     ...COLLECTION_SORTING_OPTIONS,
 ]
 
@@ -216,6 +220,62 @@ export function filterListEntries<T extends AL_MangaCollection_MediaListCollecti
 
     // Initial sort by name
     arr = sortBy(arr, n => n?.media?.title?.userPreferred).reverse()
+
+    // Custom: Series order, then A→Z
+    if (getParamValue(params.sorting) === "SERIES_ORDER") {
+        const romanMap: Record<string, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10 };
+        const sanitizeBase = (title?: string) => {
+            if (!title) return "";
+            const t = title
+                .replace(/\s+/g, " ")
+                .trim();
+            // Remove trailing season/part/cour/vol indicators with numbers or roman numerals from base for grouping
+            return t
+                .replace(/\b(?:season|part|cour|volume|vol\.?|movie)\s+(?:\d+|[ivxlcdm]+)\b/gi, "")
+                .replace(/\b(?:ova|special)\b/gi, "")
+                .trim()
+                .toLowerCase();
+        };
+        const extractNumber = (title?: string): number | null => {
+            if (!title) return null;
+            // Prefer explicit tokens like Season/Part/Cour/Vol/Movie first
+            const tokenMatch = title.match(/\b(?:season|part|cour|volume|vol\.?|movie)\s+(\d+|[ivxlcdm]+)\b/i);
+            let numStr: string | undefined;
+            if (tokenMatch) {
+                numStr = tokenMatch[1];
+            } else {
+                // Fallback: first standalone number in title
+                const n = title.match(/(?<!#)\b(\d{1,3})\b/); // avoid hashtags
+                if (n) numStr = n[1];
+                else {
+                    // Fallback: roman numeral at end or after base
+                    const r = title.match(/\b([ivxlcdm]{1,5})\b/gi)?.pop();
+                    if (r) numStr = r.toUpperCase();
+                }
+            }
+            if (!numStr) return null;
+            const maybeNum = parseInt(numStr, 10);
+            if (!isNaN(maybeNum)) return maybeNum;
+            const roman = romanMap[numStr.toUpperCase()];
+            return roman ?? null;
+        };
+
+        arr.sort((a, b) => {
+            const ta = a?.media?.title?.userPreferred || a?.media?.title?.english || a?.media?.title?.romaji || "";
+            const tb = b?.media?.title?.userPreferred || b?.media?.title?.english || b?.media?.title?.romaji || "";
+            const baseA = sanitizeBase(ta);
+            const baseB = sanitizeBase(tb);
+            if (baseA !== baseB) return baseA.localeCompare(baseB);
+            const na = extractNumber(ta);
+            const nb = extractNumber(tb);
+            // Numbered first, with 0 before 1; no number treated as Infinity
+            const va = (na === null || na === undefined) ? Number.POSITIVE_INFINITY : na;
+            const vb = (nb === null || nb === undefined) ? Number.POSITIVE_INFINITY : nb;
+            if (va !== vb) return va - vb;
+            return ta.localeCompare(tb);
+        });
+        return arr;
+    }
 
     // Sort by title
     if (getParamValue(params.sorting) === "TITLE")

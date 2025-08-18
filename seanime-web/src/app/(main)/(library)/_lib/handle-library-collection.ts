@@ -6,11 +6,14 @@ import {
     CollectionParams,
     DEFAULT_ANIME_COLLECTION_PARAMS,
     filterAnimeCollectionEntries,
+    filterEntriesByTitle,
     sortContinueWatchingEntries,
 } from "@/lib/helpers/filtering"
 import { useThemeSettings } from "@/lib/theme/hooks"
 import { atomWithImmer } from "jotai-immer"
 import { useAtomValue, useSetAtom } from "jotai/react"
+import { atomWithStorage } from "jotai/utils"
+import { useDebounce } from "@/hooks/use-debounce"
 import React from "react"
 
 export const MAIN_LIBRARY_DEFAULT_PARAMS: CollectionParams<"anime"> = {
@@ -22,6 +25,10 @@ export const MAIN_LIBRARY_DEFAULT_PARAMS: CollectionParams<"anime"> = {
 export const __mainLibrary_paramsAtom = atomWithImmer<CollectionParams<"anime">>(MAIN_LIBRARY_DEFAULT_PARAMS)
 
 export const __mainLibrary_paramsInputAtom = atomWithImmer<CollectionParams<"anime">>(MAIN_LIBRARY_DEFAULT_PARAMS)
+
+// Search atoms for main library
+export const __mainLibrary_searchInputAtom = atomWithStorage("sea-main-library-search", "", undefined, { getOnInit: true })
+export const __mainLibrary_debouncedSearchInputAtom = atomWithImmer<string>("")
 
 export function useHandleLibraryCollection() {
     const serverStatus = useServerStatus()
@@ -47,9 +54,16 @@ export function useHandleLibraryCollection() {
     }, [data])
 
     /**
-     * Get the current params
+     * Get the current params and search
      */
     const params = useAtomValue(__mainLibrary_paramsAtom)
+    const rawSearch = useAtomValue(__mainLibrary_searchInputAtom)
+    const debouncedSearch = useDebounce(rawSearch, 250)
+    const setDebouncedSearch = useSetAtom(__mainLibrary_debouncedSearchInputAtom)
+
+    React.useEffect(() => {
+        setDebouncedSearch(debouncedSearch)
+    }, [debouncedSearch])
 
     /**
      * Sort the collection
@@ -149,11 +163,15 @@ export function useHandleLibraryCollection() {
                 ...params,
                 sorting: animeLibraryCollectionDefaultSorting,
             } as CollectionParams<"anime">
-            const arr = filterAnimeCollectionEntries(obj.entries,
+            let arr = filterAnimeCollectionEntries(obj.entries,
                 paramsToApply,
                 serverStatus?.settings?.anilist?.enableAdultContent,
                 data.continueWatchingList,
                 watchHistory)
+            // Apply title search filter if any
+            if (debouncedSearch?.trim()) {
+                arr = filterEntriesByTitle(arr, debouncedSearch)
+            }
             return {
                 type: obj.type,
                 status: obj.status,
@@ -167,7 +185,7 @@ export function useHandleLibraryCollection() {
             _lists.find(n => n.type === "COMPLETED"),
             _lists.find(n => n.type === "DROPPED"),
         ].filter(Boolean)
-    }, [data, params, serverStatus?.settings?.anilist?.enableAdultContent, watchHistory])
+    }, [data, params, serverStatus?.settings?.anilist?.enableAdultContent, watchHistory, debouncedSearch])
 
     /**
      * Sort the continue watching list

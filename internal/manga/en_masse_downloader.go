@@ -41,6 +41,10 @@ type (
 		currentSeries   string
 		startTime       time.Time
 
+		// Skip tracking
+		skippedDownloaded int
+		skippedQueued     int
+
 		// Configuration
 		cataloguePath        string
 		delayBetweenChapters time.Duration
@@ -63,6 +67,8 @@ type (
 		StartTime              time.Time `json:"startTime"`
 		Progress               float64   `json:"progress"`
 		EstimatedTimeRemaining string    `json:"estimatedTimeRemaining"`
+		SkippedDownloaded      int       `json:"skippedDownloaded"`
+		SkippedQueued          int       `json:"skippedQueued"`
 	}
 
 	// EnMasseDownloaderProgress represents the saved progress state
@@ -207,6 +213,8 @@ func (emd *EnMasseDownloader) GetStatus() *EnMasseDownloaderStatus {
 		StartTime:              emd.startTime,
 		Progress:               progress,
 		EstimatedTimeRemaining: estimatedTimeRemaining,
+		SkippedDownloaded:      emd.skippedDownloaded,
+		SkippedQueued:          emd.skippedQueued,
 	}
 }
 
@@ -218,6 +226,10 @@ func (emd *EnMasseDownloader) Start() error {
 	if emd.isRunning {
 		return fmt.Errorf("en masse downloader is already running")
 	}
+
+	// Reset skip counters for a fresh run
+	emd.skippedDownloaded = 0
+	emd.skippedQueued = 0
 
 	// Load catalogue
 	catalogue, err := emd.loadCatalogue()
@@ -518,6 +530,38 @@ func (emd *EnMasseDownloader) processSeries(entry WeebCentralCatalogueEntry) err
 				if len(parts) > 1 {
 					chapterTitle = strings.Join(parts[1:], " - ")
 				}
+			}
+
+			// Skip chapter if it already exists (downloaded or queued)
+			skip := false
+			if emd.downloader != nil && emd.downloader.mediaMap != nil {
+				if data, err := emd.downloader.mediaMap.getMediaDownload(mediaID, emd.downloader.database); err == nil {
+					if providerChs, ok := data.Downloaded["weebcentral"]; ok {
+						for _, ch := range providerChs {
+							if ch.ChapterID == chapter.ID {
+								emd.logger.Debug().Str("chapterId", chapter.ID).Msg("en_masse_downloader: Chapter already downloaded, skipping")
+								emd.skippedDownloaded++
+								skip = true
+								break
+							}
+						}
+					}
+					if !skip {
+						if providerQ, ok := data.Queued["weebcentral"]; ok {
+							for _, ch := range providerQ {
+								if ch.ChapterID == chapter.ID {
+									emd.logger.Debug().Str("chapterId", chapter.ID).Msg("en_masse_downloader: Chapter already queued, skipping")
+									emd.skippedQueued++
+									skip = true
+									break
+								}
+							}
+						}
+					}
+				}
+			}
+			if skip {
+				continue
 			}
 
 			// Use the exact same approach as the regular download handler with retry logic for rate limiting

@@ -4,6 +4,7 @@ import { useGetMangaCollection, useGetMangaLatestChapterNumbersMap } from "@/api
 import { CollectionParams, DEFAULT_COLLECTION_PARAMS, filterCollectionEntries, filterMangaCollectionEntries } from "@/lib/helpers/filtering"
 import { useThemeSettings } from "@/lib/theme/hooks"
 import { atomWithImmer } from "jotai-immer"
+import { atom } from "jotai"
 import { useAtom } from "jotai/react"
 import { atomWithStorage } from "jotai/utils"
 import { useRouter } from "next/navigation"
@@ -21,6 +22,10 @@ export const __mangaLibrary_unreadOnlyAtom = atomWithStorage("sea-manga-library-
 export const __mangaLibrary_paramsAtom = atomWithImmer<CollectionParams<"manga">>(MANGA_LIBRARY_DEFAULT_PARAMS)
 
 export const __mangaLibrary_paramsInputAtom = atomWithImmer<CollectionParams<"manga">>(MANGA_LIBRARY_DEFAULT_PARAMS)
+
+// Search atoms
+export const __mangaLibrary_searchInputAtom = atomWithStorage("sea-manga-library-search", "", undefined, { getOnInit: true })
+export const __mangaLibrary_debouncedSearchInputAtom = atom("")
 
 export const __mangaLibrary_latestChapterNumbersAtom = atomWithImmer<{
     latestChapterNumbers: Record<number, Manga_MangaLatestChapterNumberItem[]>
