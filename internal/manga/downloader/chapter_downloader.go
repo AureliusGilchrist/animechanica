@@ -223,16 +223,31 @@ func (cd *Downloader) run(queueInfo *QueueInfo) {
 //	   ├── 📄 2.jpg
 //	   └── 📄 ...
 func (cd *Downloader) downloadChapterImages(queueInfo *QueueInfo) (err error) {
+    // Ensure the queue progresses even if we hit an early return due to an error
+    handledCompletion := false
+    defer func() {
+        if err != nil && !handledCompletion {
+            queueInfo.Status = QueueStatusErrored
+            cd.queue.HasCompleted(queueInfo)
+        }
+    }()
+    // Use a temporary directory to avoid creating final series folder unless the download succeeds
+    // Final destination: {DOWNLOAD_DIR}/{SERIES}/{CHAPTERNAME}
+    destination := cd.getChapterDownloadDir(queueInfo.DownloadID)
+    // Temporary destination: {DOWNLOAD_DIR}/.tmp/{SERIES}/{CHAPTERNAME}
+    tmpRoot := filepath.Join(cd.downloadDir, ".tmp")
+    tmpDestination := filepath.Join(tmpRoot, FormatNewChapterDirName(queueInfo.SeriesTitle, queueInfo.ChapterNumber, queueInfo.ChapterTitle))
 
-	// Create download directory
-	// 📁 {provider}_{mediaId}_{chapterId}
-	destination := cd.getChapterDownloadDir(queueInfo.DownloadID)
-	if err = os.MkdirAll(destination, os.ModePerm); err != nil {
-		cd.logger.Error().Err(err).Msgf("chapter downloader: Failed to create download directory for chapter %s", queueInfo.ChapterId)
-		return err
-	}
+    // Ensure any previous temp directory for this chapter is removed
+    _ = os.RemoveAll(tmpDestination)
 
-	cd.logger.Debug().Msgf("chapter downloader: Downloading chapter %s images to %s", queueInfo.ChapterId, destination)
+    // Create temporary download directory
+    if err = os.MkdirAll(tmpDestination, os.ModePerm); err != nil {
+        cd.logger.Error().Err(err).Msgf("chapter downloader: Failed to create temp download directory for chapter %s", queueInfo.ChapterId)
+        return err
+    }
+
+    cd.logger.Debug().Msgf("chapter downloader: Downloading chapter %s images to temp %s", queueInfo.ChapterId, tmpDestination)
 
 	registry := Registry{
 		DownloadMetadata: queueInfo.DownloadID,
@@ -269,26 +284,44 @@ func (cd *Downloader) downloadChapterImages(queueInfo *QueueInfo) (err error) {
 				//cd.logger.Warn().Msg("chapter downloader: Download goroutine canceled")
 				return
 			default:
-				cd.downloadPage(page, destination, registry)
+				cd.downloadPage(page, tmpDestination, registry)
 			}
 		}(page, &registry)
 	}
 	wg.Wait()
 
 	// Write the registry
-	_ = registry.save(queueInfo, destination, cd.logger)
+	saveErr := registry.save(queueInfo, tmpDestination, cd.logger)
 
+	handledCompletion = true
 	cd.queue.HasCompleted(queueInfo)
 
-	if queueInfo.Status != QueueStatusErrored {
-		cd.logger.Info().Msgf("chapter downloader: Finished downloading chapter %s", queueInfo.ChapterId)
-	}
-
-	if queueInfo.Status == QueueStatusErrored {
+	if queueInfo.Status == QueueStatusErrored || saveErr != nil {
+		// On error, ensure temp directory is cleaned up
+		_ = os.RemoveAll(tmpDestination)
 		return fmt.Errorf("chapter downloader: Failed to download chapter %s", queueInfo.ChapterId)
 	}
 
-	return
+	// Success: move from temp to final destination. Ensure final parent exists.
+	finalParent := filepath.Dir(destination)
+	if err = os.MkdirAll(finalParent, os.ModePerm); err != nil {
+		// If we fail to ensure final parent, clean up temp and return error
+		_ = os.RemoveAll(tmpDestination)
+		cd.logger.Error().Err(err).Msgf("chapter downloader: Failed to create final parent directory for chapter %s", queueInfo.ChapterId)
+		return err
+	}
+
+	// Remove any existing destination (shouldn't normally exist for fresh download)
+	_ = os.RemoveAll(destination)
+	if err = os.Rename(tmpDestination, destination); err != nil {
+		// If rename fails, attempt to clean up temp
+		cd.logger.Error().Err(err).Msgf("chapter downloader: Failed to move chapter %s from temp to final destination", queueInfo.ChapterId)
+		_ = os.RemoveAll(tmpDestination)
+		return err
+	}
+
+	cd.logger.Info().Msgf("chapter downloader: Finished downloading chapter %s", queueInfo.ChapterId)
+	return nil
 }
 
 // downloadPage downloads a single page from the URL and saves it to the destination directory.

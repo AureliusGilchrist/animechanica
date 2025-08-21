@@ -46,6 +46,7 @@ import { BiPlay } from "react-icons/bi"
 import { IoLibrarySharp } from "react-icons/io5"
 import { RiCalendarLine } from "react-icons/ri"
 import { PluginMediaCardContextMenuItems } from "../../plugin/actions/plugin-actions"
+import { useKitsuPoster } from "@/lib/kitsu/useKitsuPoster"
 
 type MediaEntryCardBaseProps = {
     overlay?: React.ReactNode
@@ -97,8 +98,12 @@ export function MediaEntryCard<T extends "anime" | "manga">(props: MediaEntryCar
 
     const [__atomicLibraryCollection, getAtomicLibraryEntry] = useAtom(getAtomicLibraryEntryAtom)
 
-    // Show library badge if we have libraryData as before, or if caller indicates an existing folder
-    const showLibraryBadge = (!!libraryData && !!props.showLibraryBadge) || !!existingFolder
+    // Determine if this anime has been started (incomplete viewing)
+    // Consider started when progress > 0 and not COMPLETED, with a known total
+    // This enables the blue library icon for started/incomplete anime
+    // without relying solely on missing episodes or existingFolder flags.
+    // Note: Only applies to anime.
+    
 
     const showProgressBar = React.useMemo(() => {
         return !!listData?.progress
@@ -116,6 +121,22 @@ export function MediaEntryCard<T extends "anime" | "manga">(props: MediaEntryCar
     }, [serverStatus?.isOffline, type])
 
     const progressTotal = type === "anime" ? (media as AL_BaseAnime)?.episodes : (media as AL_BaseManga)?.chapters
+
+    const isStarted = React.useMemo(() => {
+        if (type !== "anime") return false
+        const total = progressTotal ?? 0
+        const prog = listData?.progress ?? 0
+        const notCompleted = listData?.status !== "COMPLETED"
+        // Started when some progress is made but not finished (and total is known)
+        return total > 0 && prog > 0 && notCompleted && prog < total
+    }, [type, progressTotal, listData?.progress, listData?.status])
+
+    // Show badge when:
+    // - linked in library, or
+    // - an existing folder is present while not linked, or
+    // - anime is started (incomplete) according to list data
+    const showLibraryBadge = (!!props.showLibraryBadge)
+        && (!!libraryData || (!!existingFolder && !libraryData) || isStarted)
 
     const pathname = usePathname()
     //
@@ -171,6 +192,14 @@ export function MediaEntryCard<T extends "anime" | "manga">(props: MediaEntryCar
 
     if (!media) return null
 
+    // Prefer Kitsu poster for manga thumbnails when available
+    const mangaTitle = (type === "manga")
+        ? (media.title?.userPreferred || media.title?.romaji || media.title?.english || "")
+        : ""
+    const { url: kitsuPoster } = useKitsuPoster(type === "manga" ? mangaTitle : null)
+    const mangaCover = (media as AL_BaseManga)?.coverImage?.extraLarge || (media as AL_BaseManga)?.coverImage?.large || ""
+    const preferredMangaCover = (type === "manga") ? (kitsuPoster || mangaCover) : undefined
+
     return (
         <MediaEntryCardContainer
             data-media-id={media.id}
@@ -205,7 +234,7 @@ export function MediaEntryCard<T extends "anime" | "manga">(props: MediaEntryCar
                     <MediaEntryCardHoverPopup
                         onMouseEnter={onPopupMouseEnter}
                         onMouseLeave={onPopupMouseLeave}
-                        coverImage={media.bannerImage || media.coverImage?.extraLarge || ""}
+                        coverImage={(type === "manga" ? (preferredMangaCover || "") : (media.bannerImage || media.coverImage?.extraLarge || ""))}
                     >
 
                         {/*METADATA SECTION*/}
@@ -219,7 +248,7 @@ export function MediaEntryCard<T extends "anime" | "manga">(props: MediaEntryCar
                                 progressTotal={progressTotal}
                                 showTrailer={showTrailer}
                                 disableAnimeCardTrailers={serverStatus?.settings?.library?.disableAnimeCardTrailers}
-                                bannerImage={media.bannerImage || media.coverImage?.extraLarge}
+                                bannerImage={(type === "manga" ? preferredMangaCover : (media.bannerImage || media.coverImage?.extraLarge))}
                                 isAdult={media.isAdult}
                                 blurAdultContent={serverStatus?.settings?.anilist?.blurAdultContent}
                                 link={link}
@@ -305,13 +334,16 @@ export function MediaEntryCard<T extends "anime" | "manga">(props: MediaEntryCar
                 progress={listData?.progress}
                 progressTotal={progressTotal}
                 startDate={media.startDate}
-                bannerImage={media.coverImage?.extraLarge || ""}
+                bannerImage={(type === "manga" ? (preferredMangaCover || "") : (media.coverImage?.extraLarge || ""))}
                 isAdult={media.isAdult}
                 showLibraryBadge={showLibraryBadge}
-                // Treat existingFolder as a partial library to render blue intent badge
+                // Treat as partial only when linked but missing episodes, or when folder exists and not linked
                 partialLibrary={
-                    (type === "anime" && !!libraryData && !!missingEpisodes.find(n => n.baseAnime?.id === media.id))
-                    || (!!existingFolder) || false
+                    (type === "anime" && (
+                        (!!libraryData && !!missingEpisodes.find(n => n.baseAnime?.id === media.id))
+                        || (!!existingFolder && !libraryData)
+                        || isStarted
+                    )) || false
                 }
                 blurAdultContent={serverStatus?.settings?.anilist?.blurAdultContent}
             >

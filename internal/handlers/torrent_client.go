@@ -31,6 +31,7 @@ func (h *Handler) HandleGetActiveTorrentList(c echo.Context) error {
 		if !ok {
 			return h.RespondWithError(c, errors.New("could not start torrent client, verify your settings"))
 		}
+
 		res, err = h.App.TorrentClientRepository.GetActiveTorrents()
 	}
 
@@ -121,14 +122,14 @@ func (h *Handler) HandleTorrentClientDownload(c echo.Context) error {
 	}
 
 	// Check that the destination path is a library path
-	//libraryPaths, err := h.App.Database.GetAllLibraryPathsFromSettings()
-	//if err != nil {
-	//	return h.RespondWithError(c, err)
-	//}
-	//isInLibrary := util.IsSubdirectoryOfAny(libraryPaths, b.Destination)
-	//if !isInLibrary {
-	//	return h.RespondWithError(c, errors.New("destination path is not a library path"))
-	//}
+	libraryPaths, err := h.App.Database.GetAllLibraryPathsFromSettings()
+	if err != nil {
+		libraryPaths = []string{}
+	}
+	isInLibrary := util.IsSubdirectoryOfAny(libraryPaths, b.Destination)
+	if !isInLibrary {
+		return h.RespondWithError(c, errors.New("destination path is not a library path"))
+	}
 
 	// try to start torrent client if it's not running
 	ok := h.App.TorrentClientRepository.Start()
@@ -158,6 +159,11 @@ func (h *Handler) HandleTorrentClientDownload(c echo.Context) error {
 		if err != nil {
 			return h.RespondWithError(c, err)
 		}
+
+		// Schedule auto-linking for this destination after downloads complete
+		if b.Media != nil {
+			h.scheduleAutoLinkForDestination(b.Destination, b.Media.ID)
+		}
 	} else {
 
 		// Get magnets
@@ -181,6 +187,11 @@ func (h *Handler) HandleTorrentClientDownload(c echo.Context) error {
 		err = h.App.TorrentClientRepository.AddMagnets(magnets, b.Destination)
 		if err != nil {
 			return h.RespondWithError(c, err)
+		}
+
+		// Schedule auto-linking for this destination after downloads complete
+		if b.Media != nil {
+			h.scheduleAutoLinkForDestination(b.Destination, b.Media.ID)
 		}
 	}
 

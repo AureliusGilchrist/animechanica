@@ -211,7 +211,7 @@ export function MainSidebar() {
         // En Masse Downloader tab
         {
             id: "en-masse-downloader",
-            iconType: BiDownload,
+            iconType: HiOutlineServerStack,
             name: "En Masse Downloader",
             href: "/en-masse-downloader",
             isCurrent: pathname === "/en-masse-downloader",

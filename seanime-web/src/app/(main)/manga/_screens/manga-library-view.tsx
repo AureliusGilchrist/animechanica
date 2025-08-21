@@ -162,6 +162,7 @@ function PaginatedMediaGrid({
     }, [server, safePage, serverPageCount])
 
     const itemsToRender = server ? (serverPage?.items || []) : pageEntries
+    const pageCount = server ? serverPageCount : clientPageCount
 
     return (
         <>
@@ -201,25 +202,23 @@ function PaginatedMediaGrid({
                         className="min-w-[5rem]"
                     />
                 </div>
-                {(server ? serverPageCount : clientPageCount) > 1 && (
-                    <div className="flex items-center justify-center gap-3">
-                        <button
-                            className="px-3 py-1 rounded border disabled:opacity-50"
-                            onClick={() => setPage(p => Math.max(1, p - 1))}
-                            disabled={safePage === 1}
-                        >
-                            Prev
-                        </button>
-                        <span className="text-sm text-[--muted]">Page {safePage} / {server ? serverPageCount : clientPageCount}</span>
-                        <button
-                            className="px-3 py-1 rounded border disabled:opacity-50"
-                            onClick={() => setPage(p => Math.min((server ? serverPageCount : clientPageCount), p + 1))}
-                            disabled={safePage === (server ? serverPageCount : clientPageCount)}
-                        >
-                            Next
-                        </button>
-                    </div>
-                )}
+                <div className="flex items-center justify-center gap-3">
+                    <button
+                        className="px-3 py-1 rounded border disabled:opacity-50"
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={safePage === 1}
+                    >
+                        Prev
+                    </button>
+                    <span className="text-sm text-[--muted]">Page {safePage} / {pageCount}</span>
+                    <button
+                        className="px-3 py-1 rounded border disabled:opacity-50"
+                        onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                        disabled={safePage === pageCount}
+                    >
+                        Next
+                    </button>
+                </div>
             </div>
         </>
     )

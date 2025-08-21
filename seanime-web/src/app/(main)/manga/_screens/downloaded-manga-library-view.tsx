@@ -8,6 +8,7 @@ import { MediaCardLazyGrid } from "@/app/(main)/_features/media/_components/medi
 import { LuRefreshCw } from "react-icons/lu"
 import { toast } from "sonner"
 import Link from "next/link"
+import { useKitsuPoster } from "@/lib/kitsu/useKitsuPoster"
 
 type DownloadedMangaLibraryViewProps = {
     search?: string
@@ -125,14 +126,21 @@ function DownloadedMangaCard({ series }: DownloadedMangaCardProps) {
         ? `/manga/entry?id=${series.mediaId}` 
         : `/manga/local/${encodeURIComponent(series.seriesTitle)}`
 
+    // Prefer Kitsu poster when available, fallback to local cover if present
+    const { url: kitsuPoster } = useKitsuPoster(series.seriesTitle)
+    const localCover = series.coverImagePath
+        ? `/api/v1/manga/local-page/${encodeURIComponent(series.coverImagePath)}`
+        : null
+    const imgSrc = kitsuPoster || localCover || "/no-cover.png"
+
     return (
         <Link href={detailsLink}>
             <div className="group relative overflow-hidden rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer">
                 {/* Cover Image */}
                 <div className="aspect-[3/4] relative overflow-hidden bg-muted">
-                    {series.coverImagePath ? (
+                    {imgSrc ? (
                         <img
-                            src={`/api/v1/manga/local-page/${encodeURIComponent(series.coverImagePath)}`}
+                            src={imgSrc}
                             alt={series.seriesTitle}
                             className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
                             loading="lazy"

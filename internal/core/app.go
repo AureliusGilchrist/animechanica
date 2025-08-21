@@ -40,6 +40,7 @@ import (
 	"seanime/internal/plugin"
 	"seanime/internal/report"
 	"seanime/internal/torrent_clients/torrent_client"
+	"seanime/internal/torrents/completion_monitor"
 	"seanime/internal/torrents/torrent"
 	"seanime/internal/torrentstream"
 	"seanime/internal/updater"
@@ -58,6 +59,7 @@ type (
 		Logger                        *zerolog.Logger
 		TorrentClientRepository       *torrent_client.Repository
 		TorrentRepository             *torrent.Repository
+		CompletionMonitor             *completion_monitor.Monitor
 		DebridClientRepository        *debrid_client.Repository
 		Watcher                       *scanner.Watcher
 		AnilistClient                 anilist.AnilistClient
@@ -340,6 +342,7 @@ func NewApp(configOpts *ConfigOptions, selfupdater *updater.SelfUpdater) *App {
 		ExtensionPlaygroundRepository: extensionPlaygroundRepository,
 		ReportRepository:              report.NewRepository(logger),
 		TorrentRepository:             nil, // Initialized in App.initModulesOnce
+		CompletionMonitor:             nil, // Initialized on demand via API
 		FillerManager:                 nil, // Initialized in App.initModulesOnce
 		MangaDownloader:               nil, // Initialized in App.initModulesOnce
 		PlaybackManager:               nil, // Initialized in App.initModulesOnce

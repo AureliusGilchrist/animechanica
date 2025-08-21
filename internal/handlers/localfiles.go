@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"seanime/internal/api/anilist"
 	"seanime/internal/database/db_bridge"
 	"seanime/internal/events"
 	"seanime/internal/library/anime"
@@ -43,11 +44,11 @@ func (h *Handler) HandleGetLocalFiles(c echo.Context) error {
 //	@returns { moved: number, skipped: number, deletedFolders: []string }
 func (h *Handler) HandleMoveAndRenameAnimeSeries(c echo.Context) error {
 	type body struct {
-		MediaId        int     `json:"mediaId"`
-		ConfirmDelete  bool    `json:"confirmDelete"`
-		DryRun         bool    `json:"dryRun,omitempty"`
-		IncludeNonMain *bool   `json:"includeNonMain,omitempty"` // nil => default true
-		TargetDir      string  `json:"targetDir,omitempty"`      // optional override for destination directory
+		MediaId        int    `json:"mediaId"`
+		ConfirmDelete  bool   `json:"confirmDelete"`
+		DryRun         bool   `json:"dryRun,omitempty"`
+		IncludeNonMain *bool  `json:"includeNonMain,omitempty"` // nil => default true
+		TargetDir      string `json:"targetDir,omitempty"`      // optional override for destination directory
 	}
 
 	b := new(body)
@@ -64,8 +65,9 @@ func (h *Handler) HandleMoveAndRenameAnimeSeries(c echo.Context) error {
 		return h.RespondWithError(c, err)
 	}
 
-	// Determine default for IncludeNonMain (default true if not provided)
-	includeNonMain := true
+	// Determine default for IncludeNonMain (default false if not provided)
+	// This aligns with the UI text: "Move & rename all main episodes".
+	includeNonMain := false
 	if b.IncludeNonMain != nil {
 		includeNonMain = *b.IncludeNonMain
 	}
@@ -148,18 +150,68 @@ func (h *Handler) HandleMoveAndRenameAnimeSeries(c echo.Context) error {
 		}
 	}
 
+	// Resolve proper series title from AniList collection (romaji preferred, fallback english)
 	seriesName := filepath.Base(seriesDir)
+	{
+		if animeCollection, err := h.App.GetAnimeCollection(false); err == nil && animeCollection != nil {
+			found := false
+			for _, list := range animeCollection.MediaListCollection.GetLists() {
+				for _, entry := range list.GetEntries() {
+					if entry != nil && entry.GetMedia() != nil && entry.GetMedia().GetID() == b.MediaId {
+						media := entry.GetMedia()
+						if media.GetTitle() != nil {
+							if t := media.GetTitle().GetRomaji(); t != nil && *t != "" {
+								seriesName = *t
+							} else if t := media.GetTitle().GetEnglish(); t != nil && *t != "" {
+								seriesName = *t
+							}
+						}
+						found = true
+						break
+					}
+				}
+				if found {
+					break
+				}
+			}
+		}
+	}
 
-	// If there's only one source directory and it's a direct child of seriesDir,
-	// treat this as a single-recursion case: keep files inside that child folder
-	// and name them after that folder instead of moving them up to seriesDir.
-	singleRecursion := false
-	singleRecursionDir := ""
-	if len(sourceDirs) == 1 {
-		candidate := sourceDirs[0]
-		if filepath.Dir(candidate) == seriesDir {
-			singleRecursion = true
-			singleRecursionDir = candidate
+	// Prepare sanitization helper (used for folder and file names)
+	sanitize := func(name string) string {
+		// Remove/replace characters illegal in filenames
+		invalidRe := regexp.MustCompile(`[\\/:*?"<>|]`)
+		trimmed := invalidRe.ReplaceAllString(name, " ")
+		// Collapse multiple spaces
+		spaceRe := regexp.MustCompile(`\s+`)
+		return spaceRe.ReplaceAllString(trimmed, " ")
+	}
+
+	// Fixed destination root: always place under /aeternae/theater/anime/completed/{SERIES_TITLE}
+	// Final structure: /aeternae/theater/anime/completed/{SERIES_TITLE}/{file.ext}
+	var seriesDirFinal string
+	{
+		const baseRoot = "/aeternae/theater/anime/completed"
+		seriesDirFinal = filepath.Join(baseRoot, sanitize(seriesName))
+	}
+
+	// Determine if this media is a movie according to AniList
+	isMovie := false
+	if animeCollection, err := h.App.GetAnimeCollection(false); err == nil && animeCollection != nil {
+		done := false
+		for _, list := range animeCollection.MediaListCollection.GetLists() {
+			for _, entry := range list.GetEntries() {
+				if entry != nil && entry.GetMedia() != nil && entry.GetMedia().GetID() == b.MediaId {
+					if f := entry.GetMedia().GetFormat(); f != nil && *f == anilist.MediaFormatMovie {
+						isMovie = true
+					}
+					done = true
+					break
+				}
+			}
+			if done {
+				break
+			}
 		}
 	}
 
@@ -167,15 +219,6 @@ func (h *Handler) HandleMoveAndRenameAnimeSeries(c echo.Context) error {
 	sourceDirs = lo.Uniq(lo.Map(files, func(lf *anime.LocalFile, _ int) string { return filepath.Dir(lf.GetPath()) }))
 
 	// Prepare operations
-	sanitize := func(name string) string {
-		// Remove/replace characters illegal in filenames
-		// Allow basic punctuation, replace others with space
-		invalidRe := regexp.MustCompile(`[\\/:*?"<>|]`)
-		trimmed := invalidRe.ReplaceAllString(name, " ")
-		// Collapse multiple spaces
-		spaceRe := regexp.MustCompile(`\s+`)
-		return spaceRe.ReplaceAllString(trimmed, " ")
-	}
 
 	type moveResult struct {
 		moved          int
@@ -194,18 +237,23 @@ func (h *Handler) HandleMoveAndRenameAnimeSeries(c echo.Context) error {
 			ep = 0
 		}
 		epTitle := lf.GetParsedEpisodeTitle()
-		if len(epTitle) == 0 {
-			epTitle = fmt.Sprintf("Episode %03d", ep)
-		}
-		// Decide destination directory and series name for naming based on recursion rule
-		destDir := seriesDir
-		nameSeries := seriesName
-		if singleRecursion {
-			destDir = singleRecursionDir
-			nameSeries = filepath.Base(singleRecursionDir)
-		}
 
-		newName := fmt.Sprintf("%s - %03d - %s%s", sanitize(nameSeries), ep, sanitize(epTitle), ext)
+		// Decide destination directory and series name for naming
+		destDir := seriesDirFinal
+		nameSeries := seriesName
+
+		var newName string
+		if isMovie {
+			// For movies, name is just the series title
+			newName = fmt.Sprintf("%s%s", sanitize(nameSeries), ext)
+		} else {
+			if strings.TrimSpace(epTitle) == "" {
+				// No episode title: omit trailing dash and title
+				newName = fmt.Sprintf("%s - %03d%s", sanitize(nameSeries), ep, ext)
+			} else {
+				newName = fmt.Sprintf("%s - %03d - %s%s", sanitize(nameSeries), ep, sanitize(epTitle), ext)
+			}
+		}
 		newPath := filepath.Join(destDir, newName)
 
 		// If target exists, add a numeric suffix to avoid collision
@@ -323,106 +371,108 @@ func (h *Handler) HandleMoveAndRenameAnimeSeries(c echo.Context) error {
 //	@returns { items: []anime.LocalFile, total: number, page: number, pageSize: number }
 func (h *Handler) HandleListLinkedAnimeFiles(c echo.Context) error {
 
-    // Parse query params
-    source := c.QueryParam("source") // auto|manual|any
-    if source == "" {
-        source = "any"
-    }
-    blockedParam := c.QueryParam("blocked") // true|false|any
-    if blockedParam == "" {
-        blockedParam = "any"
-    }
-    mediaIdParam := c.QueryParam("mediaId")
-    pageParam := c.QueryParam("page")
-    pageSizeParam := c.QueryParam("pageSize")
-    hiddenParam := c.QueryParam("hidden") // include|exclude|only
-    if hiddenParam == "" {
-        hiddenParam = "exclude"
-    }
+	// Parse query params
+	source := c.QueryParam("source") // auto|manual|any
+	if source == "" {
+		source = "any"
+	}
+	blockedParam := c.QueryParam("blocked") // true|false|any
+	if blockedParam == "" {
+		blockedParam = "any"
+	}
+	mediaIdParam := c.QueryParam("mediaId")
+	pageParam := c.QueryParam("page")
+	pageSizeParam := c.QueryParam("pageSize")
+	hiddenParam := c.QueryParam("hidden") // include|exclude|only
+	if hiddenParam == "" {
+		hiddenParam = "exclude"
+	}
 
-    // Defaults
-    page := 1
-    pageSize := 5000
-    var mediaId int
+	// Defaults
+	page := 1
+	pageSize := 5000
+	var mediaId int
 
-    if pageParam != "" {
-        fmt.Sscanf(pageParam, "%d", &page)
-        if page <= 0 {
-            page = 1
-        }
-    }
-    if pageSizeParam != "" {
-        fmt.Sscanf(pageSizeParam, "%d", &pageSize)
-        // Allow large page sizes; clamp to 5000 if out of range
-        if pageSize <= 0 || pageSize > 5000 {
-            pageSize = 5000
-        }
-    }
-    if mediaIdParam != "" {
-        fmt.Sscanf(mediaIdParam, "%d", &mediaId)
-    }
+	if pageParam != "" {
+		fmt.Sscanf(pageParam, "%d", &page)
+		if page <= 0 {
+			page = 1
+		}
+	}
 
-    // Load local files
-    lfs, _, err := db_bridge.GetLocalFiles(h.App.Database)
-    if err != nil {
-        return h.RespondWithError(c, err)
-    }
+	// Removed stray block (not applicable in this handler)
+	if pageSizeParam != "" {
+		fmt.Sscanf(pageSizeParam, "%d", &pageSize)
+		// Allow large page sizes; clamp to 5000 if out of range
+		if pageSize <= 0 || pageSize > 5000 {
+			pageSize = 5000
+		}
+	}
+	if mediaIdParam != "" {
+		fmt.Sscanf(mediaIdParam, "%d", &mediaId)
+	}
 
-    // Filter linked files
-    filtered := lo.Filter(lfs, func(lf *anime.LocalFile, _ int) bool {
-        if lf.MediaId == 0 {
-            return false
-        }
-        if mediaId != 0 && lf.MediaId != mediaId {
-            return false
-        }
-        // source filter
-        switch source {
-        case "auto":
-            if lf.LinkSource != "auto" {
-                return false
-            }
-        case "manual":
-            if lf.LinkSource != "manual" {
-                return false
-            }
-        }
-        // blocked filter
-        switch blockedParam {
-        case "true":
-            if !lf.AutoMatchBlocked {
-                return false
-            }
-        case "false":
-            if lf.AutoMatchBlocked {
-                return false
-            }
-        }
-        // hidden filter
-        switch hiddenParam {
-        case "only":
-            if !lf.Hidden {
-                return false
-            }
-        case "exclude":
-            if lf.Hidden {
-                return false
-            }
-        }
-        return true
-    })
+	// Load local files
+	lfs, _, err := db_bridge.GetLocalFiles(h.App.Database)
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
 
-    total := len(filtered)
-    // Pagination window
-    start := (page - 1) * pageSize
-    if start > total {
-        start = total
-    }
-    end := start + pageSize
-    if end > total {
-        end = total
-    }
-    items := filtered[start:end]
+	// Filter linked files
+	filtered := lo.Filter(lfs, func(lf *anime.LocalFile, _ int) bool {
+		if lf.MediaId == 0 {
+			return false
+		}
+		if mediaId != 0 && lf.MediaId != mediaId {
+			return false
+		}
+		// source filter
+		switch source {
+		case "auto":
+			if lf.LinkSource != "auto" {
+				return false
+			}
+		case "manual":
+			if lf.LinkSource != "manual" {
+				return false
+			}
+		}
+		// blocked filter
+		switch blockedParam {
+		case "true":
+			if !lf.AutoMatchBlocked {
+				return false
+			}
+		case "false":
+			if lf.AutoMatchBlocked {
+				return false
+			}
+		}
+		// hidden filter
+		switch hiddenParam {
+		case "only":
+			if !lf.Hidden {
+				return false
+			}
+		case "exclude":
+			if lf.Hidden {
+				return false
+			}
+		}
+		return true
+	})
+
+	total := len(filtered)
+	// Pagination window
+	start := (page - 1) * pageSize
+	if start > total {
+		start = total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	items := filtered[start:end]
 
 	// Response structure
 	type resp struct {

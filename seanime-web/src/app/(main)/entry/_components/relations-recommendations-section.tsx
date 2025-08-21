@@ -38,19 +38,51 @@ export function RelationsRecommendationsSection(props: RelationsRecommendationsS
 
     // Map of mediaId -> folder exists
     const [recFolderExists, setRecFolderExists] = React.useState<Record<number, boolean>>({})
+    // LocalStorage cache for positive hits so we don't recheck repeatedly
+    const CACHE_KEY = "recFolderExistsCacheV2"
+    const loadCache = React.useCallback((): Record<number, boolean> => {
+        try {
+            const raw = localStorage.getItem(CACHE_KEY)
+            if (!raw) return {}
+            const parsed = JSON.parse(raw) as unknown
+            if (parsed && typeof parsed === "object") {
+                // Ensure values are booleans and keys numeric
+                const out: Record<number, boolean> = {}
+                const obj = parsed as Record<string, unknown>
+                Object.keys(obj).forEach(k => {
+                    const id = Number(k)
+                    if (!Number.isNaN(id) && !!obj[k]) out[id] = true
+                })
+                return out
+            }
+        } catch (_) { /* ignore */ }
+        return {}
+    }, [])
+    const saveCache = React.useCallback((cache: Record<number, boolean>) => {
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)) } catch (_) { /* ignore */ }
+    }, [])
 
-    // Fetch folder existence for each recommended anime using backend endpoint
+    // Fetch folder existence for each recommended anime using backend endpoint (with positive cache)
     React.useEffect(() => {
         const ids = (recommendations || []).map(m => m!.id).filter(Boolean) as number[]
         if (!ids.length) {
             setRecFolderExists({})
             return
         }
+        // Prefill from cache
+        const cache = loadCache()
+        const initial: Record<number, boolean> = {}
+        ids.forEach(id => { if (cache[id]) initial[id] = true })
+        if (Object.keys(initial).length) setRecFolderExists(prev => ({ ...prev, ...initial }))
+
+        // Only fetch for ids not in cache
+        const toFetch = ids.filter(id => !cache[id])
+        if (!toFetch.length) return
+
         let cancelled = false
         ;(async () => {
             try {
-                // Fire requests in parallel with basic throttling
-                const results = await Promise.allSettled(ids.map(async (id) => {
+                const results = await Promise.allSettled(toFetch.map(async (id) => {
                     const resp = await fetch(`/api/v1/library/anime-entry/dir-exists/${id}`)
                     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
                     const data = await resp.json() as { exists?: boolean }
@@ -58,18 +90,21 @@ export function RelationsRecommendationsSection(props: RelationsRecommendationsS
                 }))
                 if (cancelled) return
                 const map: Record<number, boolean> = {}
+                let changed = false
                 results.forEach(r => {
                     if (r.status === "fulfilled") {
                         map[r.value.id] = r.value.exists
+                        if (r.value.exists && !cache[r.value.id]) { cache[r.value.id] = true; changed = true }
                     }
                 })
-                setRecFolderExists(map)
+                if (changed) saveCache(cache)
+                if (Object.keys(map).length) setRecFolderExists(prev => ({ ...prev, ...map }))
             } catch (_) {
                 // fail silently; keep map as-is
             }
         })()
         return () => { cancelled = true }
-    }, [recommendations])
+    }, [recommendations, loadCache, saveCache])
 
     if (!entry || !details) return null
 

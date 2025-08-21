@@ -125,16 +125,43 @@ func (h *Handler) HandleCheckAnimeSeriesDirExists(c echo.Context) error {
 	}
 
 	romaji := strings.TrimSpace(lo.FromPtr(media.Title.Romaji))
-	if romaji == "" {
-		// Fall back to English, then Native, then id
-		romaji = firstNonEmpty(
-			strings.TrimSpace(lo.FromPtr(media.Title.English)),
-			strings.TrimSpace(lo.FromPtr(media.Title.Native)),
-			fmt.Sprintf("Anime %d", mId),
-		)
-	}
+	english := strings.TrimSpace(lo.FromPtr(media.Title.English))
+	native := strings.TrimSpace(lo.FromPtr(media.Title.Native))
+	userPreferred := strings.TrimSpace(lo.FromPtr(media.Title.UserPreferred))
 
-	sanitized := sanitizePathName(romaji)
+	// Build candidate names using the same sanitizer used when making folders
+	rawCandidates := []string{
+		romaji,
+		english,
+		userPreferred,
+		native,
+	}
+	// Always include a fallback label to avoid empty
+	if firstNonEmpty(rawCandidates...) == "" {
+		rawCandidates = append(rawCandidates, fmt.Sprintf("Anime %d", mId))
+	}
+	// Sanitize and de-duplicate
+	candidateSet := map[string]struct{}{}
+	candidates := make([]string, 0, len(rawCandidates))
+	for _, t := range rawCandidates {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		s := sanitizePathName(t)
+		if s == "" {
+			continue
+		}
+		if _, ok := candidateSet[s]; !ok {
+			candidateSet[s] = struct{}{}
+			candidates = append(candidates, s)
+		}
+	}
+	// Keep the first candidate as the primary name for response
+	sanitized := ""
+	if len(candidates) > 0 {
+		sanitized = candidates[0]
+	}
 
 	// Get all library paths from settings
 	libPaths, err := h.App.Database.GetAllLibraryPathsFromSettings()
@@ -142,25 +169,71 @@ func (h *Handler) HandleCheckAnimeSeriesDirExists(c echo.Context) error {
 		return h.RespondWithError(c, err)
 	}
 
+	// Also consider the theater/completed path where in-progress moves may exist
+	// Keep this aligned with the destination used by HandleMoveAndRenameAnimeSeries
+	const theaterCompletedBase = "/aeternae/theater/anime/completed"
+
+	// Optional: restrict to only the theater path when explicitly requested by the client
+	onlyTheater := c.QueryParam("only_theater") == "1"
+
+	// Build list of bases to check (unique, non-empty)
+	basesToCheck := make([]string, 0, len(libPaths)+1)
+	seen := map[string]struct{}{}
+	if onlyTheater {
+		basesToCheck = append(basesToCheck, theaterCompletedBase)
+	} else {
+		for _, p := range libPaths {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			if _, ok := seen[p]; !ok {
+				seen[p] = struct{}{}
+				basesToCheck = append(basesToCheck, p)
+			}
+		}
+		if strings.TrimSpace(theaterCompletedBase) != "" {
+			if _, ok := seen[theaterCompletedBase]; !ok {
+				seen[theaterCompletedBase] = struct{}{}
+				basesToCheck = append(basesToCheck, theaterCompletedBase)
+			}
+		}
+	}
+
 	// Check each path for existence (case-insensitive on name for portability)
 	exists := false
-	for _, base := range libPaths {
+	for _, base := range basesToCheck {
 		if strings.TrimSpace(base) == "" {
 			continue
 		}
-		candidate := filepath.Join(base, sanitized)
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			exists = true
+		// Fast path: try direct stat for each candidate name
+		for _, name := range candidates {
+			p := filepath.Join(base, name)
+			if info, err := os.Stat(p); err == nil && info.IsDir() {
+				exists = true
+				break
+			}
+		}
+		if exists {
 			break
 		}
-		// Fallback: scan directory entries and compare case-insensitively
+		// Fallback: scan top-level directory entries once and compare against candidates
 		if entries, err := os.ReadDir(base); err == nil {
+			entryNames := make(map[string]struct{}, len(entries))
 			for _, de := range entries {
 				if !de.IsDir() {
 					continue
 				}
-				if strings.EqualFold(de.Name(), sanitized) {
-					exists = true
+				entryNames[de.Name()] = struct{}{}
+			}
+			for name := range entryNames {
+				for _, cand := range candidates {
+					if strings.EqualFold(name, cand) {
+						exists = true
+						break
+					}
+				}
+				if exists {
 					break
 				}
 			}
@@ -450,7 +523,7 @@ func sanitizePathName(s string) string {
 	s = strings.TrimSpace(s)
 	// forbid path separators and control chars
 	s = strings.Map(func(r rune) rune {
-		if r == '/' || r == '\\' || r == ':' || r == '|' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' {
+		if r == '/' || r == '\\' {
 			return '-'
 		}
 		if r == 0 || r == utf8.RuneError || unicode.IsControl(r) {

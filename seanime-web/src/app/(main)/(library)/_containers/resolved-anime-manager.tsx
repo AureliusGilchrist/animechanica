@@ -1,5 +1,6 @@
 "use client"
 import { useListLinkedAnimeFiles, useUnlinkLocalFiles, useToggleAutoMatchBlocked, useMoveRenameAnimeSeries, useHideAnimeSeries, useUnhideAnimeSeries } from "@/api/hooks/anime_linked.hooks"
+import { useDeleteLocalFiles } from "@/api/hooks/localfiles.hooks"
 import { upath } from "@/lib/helpers/upath"
 import { atom } from "jotai"
 import { useAtom } from "jotai/react"
@@ -42,8 +43,9 @@ export function ResolvedAnimeManager() {
   const { mutate: moveRename, isPending: isMoving } = useMoveRenameAnimeSeries()
   const { mutate: hideSeries, isPending: isHiding } = useHideAnimeSeries()
   const { mutate: unhideSeries, isPending: isUnhiding } = useUnhideAnimeSeries()
+  const { mutate: deleteFiles, isPending: isDeleting } = useDeleteLocalFiles(undefined)
 
-  const isBusy = isLoading || isUnlinking || isToggling || isMoving || isHiding || isUnhiding
+  const isBusy = isLoading || isUnlinking || isToggling || isMoving || isHiding || isUnhiding || isDeleting
 
   // Build a mediaId -> title map (prefer romaji, fallback english, then ID)
   const { libraryCollectionList } = useHandleLibraryCollection()
@@ -165,7 +167,7 @@ export function ResolvedAnimeManager() {
                   <div className="font-semibold">{title}</div>
                   <Badge intent="gray">{files.length} file{files.length === 1 ? "" : "s"}</Badge>
                   {anyHidden && <Badge intent="warning">Hidden</Badge>}
-                  <div className="ml-auto flex items-center gap-2">
+                  <div className="ml-auto flex items-center gap-2 w-[680px] max-w-full justify-end">
                     <Button
                       size="sm"
                       intent={anyHidden ? "primary" : "gray-subtle"}
@@ -213,6 +215,24 @@ export function ResolvedAnimeManager() {
                     </Button>
                     <Button
                       size="sm"
+                      intent="alert"
+                      disabled={isBusy || files.length === 0}
+                      onClick={() => {
+                        if (!window.confirm(`Delete all ${files.length} file${files.length === 1 ? "" : "s"} in this series? This cannot be undone.`)) return
+                        const paths = files.map((f: any) => f.path)
+                        // Optimistic UI: remove this group's items immediately
+                        setLocalItems(prev => prev.filter((it: any) => it.mediaId !== mediaIdNum))
+                        deleteFiles(
+                          { paths },
+                          {
+                            onSuccess: () => refetch(),
+                            onError: () => refetch(),
+                          }
+                        )
+                      }}
+                    >Delete series</Button>
+                    <Button
+                      size="sm"
                       intent="white"
                       leftIcon={<TbUnlink />}
                       disabled={isBusy || files.length === 0}
@@ -246,7 +266,7 @@ export function ResolvedAnimeManager() {
                         <Badge intent={lf.linkSource === "manual" ? "success" : "primary"}>{lf.linkSource || "unknown"}</Badge>
                         {lf.autoMatchBlocked && <Badge intent="warning">Blocked</Badge>}
 
-                        <div className="flex items-center gap-2 ml-auto">
+                        <div className="flex items-center gap-2 ml-auto w-[680px] max-w-full justify-end">
                           <Button
                             size="sm"
                             intent="white"
@@ -265,6 +285,23 @@ export function ResolvedAnimeManager() {
                               )
                             }}
                           >Unlink</Button>
+                          <Button
+                            size="sm"
+                            intent="alert"
+                            disabled={isBusy}
+                            onClick={() => {
+                              if (!window.confirm("Delete this file? This cannot be undone.")) return
+                              // Optimistic UI: remove this single item immediately
+                              setLocalItems(prev => prev.filter((it: any) => it.path !== lf.path))
+                              deleteFiles(
+                                { paths: [lf.path] },
+                                {
+                                  onSuccess: () => refetch(),
+                                  onError: () => refetch(),
+                                }
+                              )
+                            }}
+                          >Delete</Button>
                           <div className="flex items-center gap-2">
                             <span className="text-xs opacity-80">Block auto</span>
                             <Switch

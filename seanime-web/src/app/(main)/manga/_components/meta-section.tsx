@@ -18,6 +18,7 @@ import { ThemeMediaPageInfoBoxSize, useThemeSettings } from "@/lib/theme/hooks"
 import React from "react"
 import { SiAnilist } from "react-icons/si"
 import { PluginMangaPageButtons } from "../../_features/plugin/actions/plugin-actions"
+import { useKitsuPoster } from "@/lib/kitsu/useKitsuPoster"
 
 
 export function MetaSection(props: { entry: Manga_Entry | undefined, details: AL_MangaDetailsById_Media | undefined }) {
@@ -26,6 +27,13 @@ export function MetaSection(props: { entry: Manga_Entry | undefined, details: AL
     const ts = useThemeSettings()
 
     if (!entry?.media) return null
+
+    // Prefer Kitsu poster when available
+    const primaryTitle = entry.media?.title?.userPreferred
+        || entry.media?.title?.romaji
+        || entry.media?.title?.english
+        || ""
+    const { url: kitsuPoster } = useKitsuPoster(primaryTitle)
 
     const Details = () => (
         <>
@@ -47,13 +55,13 @@ export function MetaSection(props: { entry: Manga_Entry | undefined, details: AL
     return (
         <MediaPageHeader
             backgroundImage={entry.media?.bannerImage}
-            coverImage={entry.media?.coverImage?.extraLarge}
+            coverImage={kitsuPoster || entry.media?.coverImage?.extraLarge}
         >
 
             <MediaPageHeaderDetailsContainer>
 
                 <MediaPageHeaderEntryDetails
-                    coverImage={entry.media?.coverImage?.extraLarge || entry.media?.coverImage?.large}
+                    coverImage={kitsuPoster || entry.media?.coverImage?.extraLarge || entry.media?.coverImage?.large}
                     title={entry.media?.title?.userPreferred}
                     englishTitle={entry.media?.title?.english}
                     romajiTitle={entry.media?.title?.romaji}

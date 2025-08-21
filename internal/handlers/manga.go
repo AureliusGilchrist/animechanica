@@ -56,14 +56,15 @@ func (h *Handler) HandleGetAnilistMangaCollection(c echo.Context) error {
 
 // HandleGetMangaCollectionPage
 //
-//  @summary returns a paginated slice of the user's manga collection for a given list status.
-//  @desc Use query params: status (CURRENT|PLANNING|COMPLETED|PAUSED|DROPPED), page (1-based), pageSize.
-//  @route /api/v1/manga/collection/paged [GET]
-//  @returns { items: []*manga.CollectionEntry, total: int, page: int, pageSize: int }
+//	@summary returns a paginated slice of the user's manga collection for a given list status.
+//	@desc Use query params: status (CURRENT|PLANNING|COMPLETED|PAUSED|DROPPED), page (1-based), pageSize, and optional q (search term across titles).
+//	@route /api/v1/manga/collection/paged [GET]
+//	@returns { items: []*manga.CollectionEntry, total: int, page: int, pageSize: int }
 func (h *Handler) HandleGetMangaCollectionPage(c echo.Context) error {
 	statusParam := c.QueryParam("status")
 	pageStr := c.QueryParam("page")
 	pageSizeStr := c.QueryParam("pageSize")
+	q := strings.TrimSpace(c.QueryParam("q"))
 
 	if statusParam == "" {
 		return h.RespondWithError(c, fmt.Errorf("missing status"))
@@ -96,7 +97,9 @@ func (h *Handler) HandleGetMangaCollectionPage(c echo.Context) error {
 	requested := anilist.MediaListStatus(strings.ToUpper(statusParam))
 	var entries []*manga.CollectionEntry
 	for _, l := range collection.Lists {
-		if l == nil { continue }
+		if l == nil {
+			continue
+		}
 		if l.Status == requested {
 			entries = l.Entries
 			break
@@ -107,20 +110,53 @@ func (h *Handler) HandleGetMangaCollectionPage(c echo.Context) error {
 		entries = []*manga.CollectionEntry{}
 	}
 
+	// Optional search filter across media titles
+	if q != "" {
+		qq := strings.ToLower(q)
+		filtered := make([]*manga.CollectionEntry, 0, len(entries))
+		for _, e := range entries {
+			if e == nil || e.Media == nil || e.Media.Title == nil {
+				continue
+			}
+			matched := false
+			t := e.Media.Title
+			if t.Romaji != nil && strings.Contains(strings.ToLower(*t.Romaji), qq) {
+				matched = true
+			}
+			if !matched && t.English != nil && strings.Contains(strings.ToLower(*t.English), qq) {
+				matched = true
+			}
+			if !matched && t.Native != nil && strings.Contains(strings.ToLower(*t.Native), qq) {
+				matched = true
+			}
+			if !matched && t.UserPreferred != nil && strings.Contains(strings.ToLower(*t.UserPreferred), qq) {
+				matched = true
+			}
+			if matched {
+				filtered = append(filtered, e)
+			}
+		}
+		entries = filtered
+	}
+
 	total := len(entries)
 	// Compute slice bounds
 	start := (page - 1) * pageSize
-	if start > total { start = total }
+	if start > total {
+		start = total
+	}
 	end := start + pageSize
-	if end > total { end = total }
+	if end > total {
+		end = total
+	}
 
 	pageItems := entries[start:end]
 
 	resp := struct {
 		Items    []*manga.CollectionEntry `json:"items"`
-		Total    int                     `json:"total"`
-		Page     int                     `json:"page"`
-		PageSize int                     `json:"pageSize"`
+		Total    int                      `json:"total"`
+		Page     int                      `json:"page"`
+		PageSize int                      `json:"pageSize"`
 	}{
 		Items:    pageItems,
 		Total:    total,
@@ -137,29 +173,29 @@ func (h *Handler) HandleGetMangaCollectionPage(c echo.Context) error {
 //	@route /api/v1/manga/anilist/collection/raw [GET,POST]
 //	@returns anilist.MangaCollection
 func (h *Handler) HandleGetRawAnilistMangaCollection(c echo.Context) error {
-    // Use per-session token to avoid reliance on global platform username/client
-    sessionID, _ := c.Get("Seanime-Client-Id").(string)
-    var token string
-    if s, ok := h.App.SessionManager.GetSession(sessionID); ok {
-        token = s.Token
-    }
-    if token == "" {
-        return h.RespondWithError(c, errors.New("not authenticated"))
-    }
+	// Use per-session token to avoid reliance on global platform username/client
+	sessionID, _ := c.Get("Seanime-Client-Id").(string)
+	var token string
+	if s, ok := h.App.SessionManager.GetSession(sessionID); ok {
+		token = s.Token
+	}
+	if token == "" {
+		return h.RespondWithError(c, errors.New("not authenticated"))
+	}
 
-    client := anilist.NewAnilistClient(token)
-    v, err := client.GetViewer(c.Request().Context())
-    if err != nil || v == nil || v.Viewer.Name == "" {
-        return h.RespondWithError(c, fmt.Errorf("failed to resolve viewer name: %w", err))
-    }
-    uname := v.Viewer.Name
+	client := anilist.NewAnilistClient(token)
+	v, err := client.GetViewer(c.Request().Context())
+	if err != nil || v == nil || v.Viewer.Name == "" {
+		return h.RespondWithError(c, fmt.Errorf("failed to resolve viewer name: %w", err))
+	}
+	uname := v.Viewer.Name
 
-    col, err := client.MangaCollection(c.Request().Context(), &uname)
-    if err != nil {
-        return h.RespondWithError(c, err)
-    }
+	col, err := client.MangaCollection(c.Request().Context(), &uname)
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
 
-    return h.RespondWithData(c, col)
+	return h.RespondWithData(c, col)
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -431,7 +467,7 @@ func (h *Handler) HandleGetMangaEntryPages(c echo.Context) error {
 	// For synthetic IDs (En Masse Downloader), ensure chapter container exists before trying to get pages
 	if b.MediaId >= 1000000 && b.MediaId <= 9999999 && b.Provider == manga_providers.LocalProvider {
 		h.App.Logger.Debug().Int("mediaId", b.MediaId).Msg("manga: Ensuring synthetic chapter container exists for pages request")
-		
+
 		// Create/ensure synthetic chapter container exists in cache
 		_, err := h.createSyntheticChapterContainer(b.MediaId, b.Provider)
 		if err != nil {
@@ -973,12 +1009,12 @@ func (h *Handler) createSyntheticChapterContainer(syntheticID int, provider stri
 		chapterID = strings.TrimPrefix(chapterID, "/") // Remove leading slash if present
 
 		chapterDetails := &hibikemanga.ChapterDetails{
-			ID:       chapterID,           // Use relative path as ID (e.g., "#Killstagram/0 - Chapter 0")
+			ID:       chapterID, // Use relative path as ID (e.g., "#Killstagram/0 - Chapter 0")
 			Title:    chapter.ChapterTitle,
 			Chapter:  chapter.ChapterNumber,
 			Provider: manga_providers.LocalProvider, // Force local provider for downloaded chapters
-			URL:      "",                  // URL not needed for local provider
-			Index:    0,                   // Will be set by container
+			URL:      "",                            // URL not needed for local provider
+			Index:    0,                             // Will be set by container
 		}
 		chapters = append(chapters, chapterDetails)
 	}
@@ -999,7 +1035,7 @@ func (h *Handler) createSyntheticChapterContainer(syntheticID int, provider stri
 	// Use the same bucket format as the retrieval system: manga_{provider}_chapters_{mediaId}
 	chapterContainerKey := fmt.Sprintf("%s$%d", manga_providers.LocalProvider, syntheticID)
 	containerBucket := filecache.NewBucket(fmt.Sprintf("manga_%s_chapters_%d", manga_providers.LocalProvider, syntheticID), time.Hour*24*7)
-	
+
 	// Store in cache with 7-day expiration (same as regular manga system)
 	err = h.App.FileCacher.Set(containerBucket, chapterContainerKey, container)
 	if err != nil {

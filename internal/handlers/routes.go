@@ -214,6 +214,8 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Library.GET("/local-files", h.HandleGetLocalFiles)
 	v1Library.POST("/local-files", h.HandleLocalFileBulkAction)
 	v1Library.PATCH("/local-files", h.HandleUpdateLocalFiles)
+	// Single local file update
+	v1Library.PATCH("/local-file", h.HandleUpdateLocalFileData)
 	v1Library.DELETE("/local-files", h.HandleDeleteLocalFiles)
 	v1Library.GET("/local-files/dump", h.HandleDumpLocalFilesToFile)
 
@@ -273,6 +275,11 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1.GET("/torrent-client/list", h.HandleGetActiveTorrentList)
 	v1.POST("/torrent-client/action", h.HandleTorrentClientAction)
 	v1.POST("/torrent-client/rule-magnet", h.HandleTorrentClientAddMagnetFromRule)
+
+	// Torrent Completion Monitor
+	v1.POST("/torrent-completion-monitor/start", h.HandleStartTorrentCompletionMonitor)
+	v1.POST("/torrent-completion-monitor/stop", h.HandleStopTorrentCompletionMonitor)
+	v1.GET("/torrent-completion-monitor/status", h.HandleGetTorrentCompletionMonitorStatus)
 
 	//
 	// Download
@@ -357,6 +364,7 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Manga.POST("/anilist/list", h.HandleAnilistListManga)
 	v1Manga.GET("/collection", h.HandleGetMangaCollection)
 	v1Manga.GET("/collection/paged", h.HandleGetMangaCollectionPage)
+	v1Manga.GET("/index", h.HandleGetMangaIndex)
 	v1Manga.GET("/latest-chapter-numbers", h.HandleGetMangaLatestChapterNumbersMap)
 	v1Manga.POST("/refetch-chapter-containers", h.HandleRefetchMangaChapterContainers)
 	v1Manga.GET("/entry/:id", h.HandleGetMangaEntry)
@@ -567,28 +575,29 @@ func (h *Handler) RespondWithError(c echo.Context, err error) error {
 func headMethodMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		// Skip directstream route
-		if strings.Contains(c.Request().URL.Path, "/directstream/stream") {
-			return next(c)
-		}
+		if strings.Contains(c.Request().URL.Path, "/directstream/stream") ||
+            strings.Contains(c.Request().URL.Path, "/mediastream/direct") {
+            return next(c)
+        }
 
-		if c.Request().Method == http.MethodHead {
-			// Set the method to GET temporarily to reuse the handler
-			c.Request().Method = http.MethodGet
+        if c.Request().Method == http.MethodHead {
+            // Set the method to GET temporarily to reuse the handler
+            c.Request().Method = http.MethodGet
 
-			defer func() {
-				c.Request().Method = http.MethodHead
-			}() // Restore method after
+            defer func() {
+                c.Request().Method = http.MethodHead
+            }() // Restore method after
 
-			// Call the next handler and then clear the response body
-			if err := next(c); err != nil {
-				if err.Error() == echo.ErrMethodNotAllowed.Error() {
-					return c.NoContent(http.StatusOK)
-				}
+            // Call the next handler and then clear the response body
+            if err := next(c); err != nil {
+                if err.Error() == echo.ErrMethodNotAllowed.Error() {
+                    return c.NoContent(http.StatusOK)
+                }
 
-				return err
-			}
-		}
+                return err
+            }
+        }
 
-		return next(c)
-	}
+        return next(c)
+    }
 }

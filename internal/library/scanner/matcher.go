@@ -10,6 +10,7 @@ import (
 	"seanime/internal/library/summary"
 	"seanime/internal/util"
 	"seanime/internal/util/comparison"
+	"strings"
 	"time"
 
 	"github.com/adrg/strutil/metrics"
@@ -28,6 +29,38 @@ type Matcher struct {
 	ScanSummaryLogger  *summary.ScanSummaryLogger // optional
 	Algorithm          string
 	Threshold          float64
+}
+
+// containsNC detects NCOP/NCED markers in file or folder titles as a fallback when metadata type isn't set.
+func containsNC(lf *anime.LocalFile) bool {
+	check := func(s string) bool {
+		u := strings.ToUpper(s)
+		return strings.Contains(u, "NCOP") || strings.Contains(u, "NCED")
+	}
+	if lf == nil {
+		return false
+	}
+	if check(lf.Name) {
+		return true
+	}
+	if lf.ParsedData != nil {
+		if check(lf.ParsedData.Original) || check(lf.ParsedData.Title) || check(lf.ParsedData.EpisodeTitle) {
+			return true
+		}
+	}
+	if t := lf.GetFolderTitle(); check(t) {
+		return true
+	}
+	// Also examine parsed folder data entries
+	for _, fpd := range lf.ParsedFolderData {
+		if fpd == nil {
+			continue
+		}
+		if check(fpd.Original) || check(fpd.Title) {
+			return true
+		}
+	}
+	return false
 }
 
 var (
@@ -146,6 +179,17 @@ func (m *Matcher) matchLocalFileWithMedia(lf *anime.LocalFile) {
 				Msg("File has no parsed title")
 		}
 		m.ScanSummaryLogger.LogFileNotMatched(lf, "No parsed title found")
+		return
+	}
+
+	// Exclude NC tracks (NCOP/NCED) from auto-matching
+	if lf.GetType() == anime.LocalFileTypeNC || containsNC(lf) {
+		if m.ScanLogger != nil {
+			m.ScanLogger.LogMatcher(zerolog.DebugLevel).
+				Str("filename", lf.Name).
+				Msg("NC track (NCOP/NCED) excluded from auto-matching")
+		}
+		m.ScanSummaryLogger.LogFileNotMatched(lf, "NC track (NCOP/NCED) excluded")
 		return
 	}
 

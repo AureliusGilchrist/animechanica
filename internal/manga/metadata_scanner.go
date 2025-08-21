@@ -84,6 +84,11 @@ func (ms *MetadataScanner) ScanDownloadedManga() ([]DownloadedMangaSeries, error
 			continue
 		}
 
+		// Skip temporary working directory used during downloads
+		if entry.Name() == ".tmp" {
+			continue
+		}
+
 		seriesPath := filepath.Join(ms.downloadDir, entry.Name())
 		seriesData, err := ms.scanSeries(entry.Name(), seriesPath)
 		if err != nil {
