@@ -743,6 +743,15 @@ func (h *Handler) HandleRemoveMangaMapping(c echo.Context) error {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// HandleGetMangaIndex
+//
+//  @summary placeholder handler for manga index.
+//  @route /api/v1/manga/index [GET]
+func (h *Handler) HandleGetMangaIndex(c echo.Context) error {
+    // Return an empty payload to satisfy existing route usage.
+    return c.JSON(http.StatusOK, map[string]any{})
+}
+
 // HandleGetDownloadedMangaSeries
 //
 //	@summary returns a list of downloaded manga series with metadata.
@@ -761,6 +770,74 @@ func (h *Handler) HandleGetDownloadedMangaSeries(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, downloadedSeries)
+}
+
+// HandleGetDownloadedMangaSeriesPaged
+//
+//	@summary returns a paginated list of downloaded manga series with metadata.
+//	@desc Use query params: page (1-based), pageSize (default 35), optional q (search by title, case-insensitive)
+//	@route /api/v1/manga/downloaded-series/paged [GET]
+//	@returns { items: []manga.DownloadedMangaSeries, total: int, page: int, pageSize: int }
+func (h *Handler) HandleGetDownloadedMangaSeriesPaged(c echo.Context) error {
+
+	if h.App.IsOffline() != nil && *h.App.IsOffline() {
+		return c.JSON(http.StatusBadRequest, "Offline mode")
+	}
+
+	pageStr := c.QueryParam("page")
+	pageSizeStr := c.QueryParam("pageSize")
+	q := strings.TrimSpace(c.QueryParam("q"))
+
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page <= 0 {
+		page = 1
+	}
+	pageSize, err := strconv.Atoi(pageSizeStr)
+	if err != nil || pageSize <= 0 {
+		pageSize = 35
+	}
+
+	list, err := h.App.MangaDownloader.GetDownloadedMangaList()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, err.Error())
+	}
+
+	// Optional search filter by series title
+	if q != "" {
+		qq := strings.ToLower(q)
+		filtered := make([]manga.DownloadedMangaSeries, 0, len(list))
+		for _, s := range list {
+			if strings.Contains(strings.ToLower(s.SeriesTitle), qq) {
+				filtered = append(filtered, s)
+			}
+		}
+		list = filtered
+	}
+
+	total := len(list)
+	start := (page - 1) * pageSize
+	if start > total {
+		start = total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	items := list[start:end]
+
+	resp := struct {
+		Items    []manga.DownloadedMangaSeries `json:"items"`
+		Total    int                           `json:"total"`
+		Page     int                           `json:"page"`
+		PageSize int                           `json:"pageSize"`
+	}{
+		Items:    items,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	}
+
+	return c.JSON(http.StatusOK, resp)
 }
 
 // HandleRefreshDownloadedMangaCache

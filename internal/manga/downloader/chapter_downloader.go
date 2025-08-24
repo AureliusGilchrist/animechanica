@@ -400,13 +400,11 @@ func (r *Registry) save(queueInfo *QueueInfo, destination string, logger *zerolo
 	}
 
 	if !allDownloaded {
-		// Clean up downloaded images
-		logger.Error().Msg("chapter downloader: Not all images have been downloaded, aborting")
-		queueInfo.Status = QueueStatusErrored
-		// Delete directory
-		go os.RemoveAll(destination)
-		return fmt.Errorf("chapter downloader: Not all images have been downloaded, operation aborted")
-	}
+        // Allow partial downloads: keep whatever pages succeeded and continue
+        // We still write the registry for the downloaded subset so the reader can open it
+        logger.Warn().Msg("chapter downloader: Not all images downloaded; saving partial chapter")
+        // Do NOT mark as errored; proceed to write registry and finalize
+    }
 
 	// Create registry file
 	var data []byte

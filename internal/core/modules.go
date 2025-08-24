@@ -242,6 +242,12 @@ func (a *App) initModulesOnce() {
 
 	a.MangaDownloader.Start()
 
+	// Auto-start the manga chapter download queue on boot so any pending items resume
+	go func() {
+		a.Logger.Debug().Msg("app: Auto-starting manga chapter download queue")
+		a.MangaDownloader.RunChapterDownloadQueue()
+	}()
+
 	// +---------------------+
 	// | En Masse Downloader |
 	// +---------------------+

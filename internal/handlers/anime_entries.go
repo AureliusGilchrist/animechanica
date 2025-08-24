@@ -175,6 +175,8 @@ func (h *Handler) HandleCheckAnimeSeriesDirExists(c echo.Context) error {
 
 	// Optional: restrict to only the theater path when explicitly requested by the client
 	onlyTheater := c.QueryParam("only_theater") == "1"
+	// Optional: return debug info (candidates, basesChecked)
+	debug := c.QueryParam("debug") == "1"
 
 	// Build list of bases to check (unique, non-empty)
 	basesToCheck := make([]string, 0, len(libPaths)+1)
@@ -243,6 +245,14 @@ func (h *Handler) HandleCheckAnimeSeriesDirExists(c echo.Context) error {
 		}
 	}
 
+	if debug {
+		return h.RespondWithData(c, map[string]any{
+			"exists":        exists,
+			"name":          sanitized,
+			"candidates":    candidates,
+			"basesChecked":  basesToCheck,
+		})
+	}
 	return h.RespondWithData(c, map[string]any{
 		"exists": exists,
 		"name":   sanitized,

@@ -84,6 +84,37 @@ export function ChapterDownloadQueue(props: ChapterDownloadQueueProps) {
 
     const isMutating = isStartingDownloadQueue || isStoppingDownloadQueue || isResettingErroredChapters || isClearingDownloadQueue
 
+    // Lazy-load: render queue items incrementally to avoid heavy DOM when queue is large
+    const PAGE_SIZE = 50
+    const [visibleCount, setVisibleCount] = React.useState(PAGE_SIZE)
+    const totalCount = downloadQueue?.length ?? 0
+    const items = React.useMemo(() => (downloadQueue ? downloadQueue.slice(0, visibleCount) : []), [downloadQueue, visibleCount])
+
+    // Reset visible items when queue updates (e.g., refetch or cleared)
+    React.useEffect(() => {
+        setVisibleCount(PAGE_SIZE)
+    }, [totalCount])
+
+    // Infinite scroll sentinel
+    const sentinelRef = React.useRef<HTMLDivElement | null>(null)
+    React.useEffect(() => {
+        const el = sentinelRef.current
+        if (!el) return
+        if (visibleCount >= totalCount) return
+        let busy = false
+        const observer = new IntersectionObserver((entries) => {
+            const entry = entries[0]
+            if (entry.isIntersecting && !busy) {
+                busy = true
+                setVisibleCount(v => Math.min(v + PAGE_SIZE, totalCount))
+                // debounce to prevent rapid multi-fire
+                setTimeout(() => { busy = false }, 150)
+            }
+        }, { root: null, rootMargin: "200px", threshold: 0.1 })
+        observer.observe(el)
+        return () => observer.disconnect()
+    }, [visibleCount, totalCount])
+
     return (
         <>
             <div className="space-y-4" data-chapter-download-queue-container>
@@ -154,7 +185,7 @@ export function ChapterDownloadQueue(props: ChapterDownloadQueueProps) {
                     {!!downloadQueue?.length ? (
                         <ScrollArea className="h-[14rem]" data-chapter-download-queue-scroll-area>
                             <div className="space-y-2" data-chapter-download-queue-scroll-area-content>
-                                {downloadQueue.map(item => {
+                                {items.map(item => {
 
                                     const media = mangaCollection?.lists?.flatMap(n => n.entries)?.find(n => n?.media?.id === item.mediaId)?.media
 
@@ -196,6 +227,11 @@ export function ChapterDownloadQueue(props: ChapterDownloadQueueProps) {
                                         </Card>
                                     )
                                 })}
+                                {visibleCount < totalCount && (
+                                    <div ref={sentinelRef} className="flex justify-center pt-2 text-[--muted]">
+                                        Loading more...
+                                    </div>
+                                )}
                             </div>
                         </ScrollArea>
                     ) : ((!downloadQueueLoading && !downloadQueueError) && (

@@ -41,9 +41,13 @@ export const MainLayout = ({ children }: { children: React.ReactNode }) => {
 
     /**
      * Data loaders
+     * Optimize: avoid AniList collection fetch on En Masse Downloader routes
      */
+    const pathname = usePathname()
     useAnimeLibraryCollectionLoader()
-    useAnimeCollectionLoader()
+    if (!(pathname?.startsWith("/en-masse-downloader") || pathname?.startsWith("/anime-batch-downloader"))) {
+        useAnimeCollectionLoader()
+    }
     useMissingEpisodesLoader()
 
     /**
@@ -60,7 +64,7 @@ export const MainLayout = ({ children }: { children: React.ReactNode }) => {
 
     const serverStatus = useServerStatus()
     const router = useRouter()
-    const pathname = usePathname()
+    // pathname already declared above
 
     React.useEffect(() => {
         if (!serverStatus?.isOffline && pathname.startsWith("/offline")) {

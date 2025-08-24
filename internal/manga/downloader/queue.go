@@ -130,6 +130,12 @@ func (q *Queue) Run() {
 		q.logger.Debug().Msg("chapter downloader: Starting queue")
 	}
 
+	// Clear any stale current item from a previous run so we can advance.
+	// This can happen if the app restarted while an item was marked as current.
+	// Combined with DB resets performed by the higher-level downloader, this
+	// ensures the queue will pick up the next available item.
+	q.current = nil
+
 	q.active = true
 
 	// Tells queue to run next if possible
@@ -146,6 +152,9 @@ func (q *Queue) Stop() {
 	}
 
 	q.active = false
+
+	// Clear current to avoid carrying stale state across stops/starts
+	q.current = nil
 }
 
 // runNext runs the next item in the queue.

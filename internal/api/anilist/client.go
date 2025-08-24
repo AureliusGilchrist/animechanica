@@ -374,7 +374,8 @@ func (ac *AnilistClientImpl) customDoFunc(ctx context.Context, req *http.Request
 	client := http.DefaultClient
 	var resp *http.Response
 
-	retryCount := 2
+	// Allow a few retries to transparently recover from short AniList rate limits
+	retryCount := 5
 
 	for i := 0; i < retryCount; i++ {
 
@@ -401,24 +402,67 @@ func (ac *AnilistClientImpl) customDoFunc(ctx context.Context, req *http.Request
 		rlRetryAfterStr := resp.Header.Get("Retry-After")
 		//println("Remaining:", rlRemainingStr, " | RetryAfter:", rlRetryAfterStr)
 
-		// If we have a rate limit, sleep for the time
-		rlRetryAfter, err := strconv.Atoi(rlRetryAfterStr)
-		if err == nil {
-			ac.logger.Warn().Msgf("anilist: Rate limited, retrying in %d seconds", rlRetryAfter+1)
+		// Explicit 429 handling (Too Many Requests)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			// Prefer server-provided Retry-After when present
+			if secs, convErr := strconv.Atoi(rlRetryAfterStr); convErr == nil {
+				waitFor := time.Duration(secs+1) * time.Second
+				ac.logger.Warn().Int("retry_after", secs).Dur("wait", waitFor).Msg("anilist: 429 received, honoring Retry-After")
+				if time.Since(sentRateLimitWarningTime) > 10*time.Second {
+					events.GlobalWSEventManager.SendEvent(events.WarningToast, "anilist: Rate limited, retrying in "+strconv.Itoa(secs+1)+" seconds")
+					sentRateLimitWarningTime = time.Now()
+				}
+				select {
+				case <-time.After(waitFor):
+					continue
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+
+			// Fallback to exponential backoff when Retry-After is missing or unparsable
+			backoffSecs := 1 << i // 1,2,4,8,16 ...
+			if backoffSecs > 30 {
+				backoffSecs = 30
+			}
+			waitFor := time.Duration(backoffSecs) * time.Second
+			ac.logger.Warn().Int("backoff_s", backoffSecs).Msg("anilist: 429 received, exponential backoff")
 			if time.Since(sentRateLimitWarningTime) > 10*time.Second {
-				events.GlobalWSEventManager.SendEvent(events.WarningToast, "anilist: Rate limited, retrying in "+strconv.Itoa(rlRetryAfter+1)+" seconds")
+				events.GlobalWSEventManager.SendEvent(events.WarningToast, "anilist: Rate limited, retrying in "+strconv.Itoa(backoffSecs)+" seconds")
 				sentRateLimitWarningTime = time.Now()
 			}
 			select {
-			case <-time.After(time.Duration(rlRetryAfter+1) * time.Second):
+			case <-time.After(waitFor):
 				continue
+			case <-ctx.Done():
+				return ctx.Err()
 			}
 		}
 
+		// If server indicates a generic retry window via Retry-After header (even without 429), respect it
+		if rlRetryAfterStr != "" {
+			if secs, convErr := strconv.Atoi(rlRetryAfterStr); convErr == nil {
+				ac.logger.Warn().Msgf("anilist: Retry-After header present, retrying in %d seconds", secs+1)
+				if time.Since(sentRateLimitWarningTime) > 10*time.Second {
+					events.GlobalWSEventManager.SendEvent(events.WarningToast, "anilist: Retrying in "+strconv.Itoa(secs+1)+" seconds")
+					sentRateLimitWarningTime = time.Now()
+				}
+				select {
+				case <-time.After(time.Duration(secs+1) * time.Second):
+					continue
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+		}
+
+		// If no rate-limit headers are present at all, a transient empty remaining header can happen; brief wait then retry
 		if rlRemainingStr == "" {
 			select {
 			case <-time.After(5 * time.Second):
 				continue
+			case <-ctx.Done():
+				return ctx.Err()
 			}
 		}
 

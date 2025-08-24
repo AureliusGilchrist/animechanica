@@ -219,23 +219,23 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Library.DELETE("/local-files", h.HandleDeleteLocalFiles)
 	v1Library.GET("/local-files/dump", h.HandleDumpLocalFilesToFile)
 
-    // Anime entry (media) endpoints
-    // Silence status routes MUST be declared before the generic :id route to avoid conflicts
-    v1Library.GET("/anime-entry/silence/:id", h.HandleGetAnimeEntrySilenceStatus)
-    v1Library.POST("/anime-entry/silence", h.HandleToggleAnimeEntrySilenceStatus)
-    // Check if series directory exists (romaji-based)
-    v1Library.GET("/anime-entry/dir-exists/:id", h.HandleCheckAnimeSeriesDirExists)
-    // Media entry data
-    v1Library.GET("/anime-entry/:id", h.HandleGetAnimeEntry)
-    // Move & Rename linked series episodes
-    v1Library.POST("/anime-entry/move-rename", h.HandleMoveAndRenameAnimeSeries)
-    // Update progress for a media entry (used by streaming / manual updates)
-    v1Library.POST("/anime-entry/update-progress", h.HandleUpdateAnimeEntryProgress)
-    // Bulk actions on anime entry (unlink, delete-files, toggle-lock, unmatch)
-    v1Library.PATCH("/anime-entry/bulk-action", h.HandleAnimeEntryBulkAction)
-    // Library collection and linked files list
-    v1Library.GET("/collection", h.HandleGetLibraryCollection)
-    v1Library.GET("/anime-linked", h.HandleListLinkedAnimeFiles)
+	// Anime entry (media) endpoints
+	// Silence status routes MUST be declared before the generic :id route to avoid conflicts
+	v1Library.GET("/anime-entry/silence/:id", h.HandleGetAnimeEntrySilenceStatus)
+	v1Library.POST("/anime-entry/silence", h.HandleToggleAnimeEntrySilenceStatus)
+	// Check if series directory exists (romaji-based)
+	v1Library.GET("/anime-entry/dir-exists/:id", h.HandleCheckAnimeSeriesDirExists)
+	// Media entry data
+	v1Library.GET("/anime-entry/:id", h.HandleGetAnimeEntry)
+	// Move & Rename linked series episodes
+	v1Library.POST("/anime-entry/move-rename", h.HandleMoveAndRenameAnimeSeries)
+	// Update progress for a media entry (used by streaming / manual updates)
+	v1Library.POST("/anime-entry/update-progress", h.HandleUpdateAnimeEntryProgress)
+	// Bulk actions on anime entry (unlink, delete-files, toggle-lock, unmatch)
+	v1Library.PATCH("/anime-entry/bulk-action", h.HandleAnimeEntryBulkAction)
+	// Library collection and linked files list
+	v1Library.GET("/collection", h.HandleGetLibraryCollection)
+	v1Library.GET("/anime-linked", h.HandleListLinkedAnimeFiles)
 	v1Library.GET("/schedule", h.HandleGetAnimeCollectionSchedule)
 
 	v1Library.GET("/scan-summaries", h.HandleGetScanSummaries)
@@ -376,6 +376,7 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 
 	v1Manga.GET("/downloaded-chapters/:id", h.HandleGetMangaEntryDownloadedChapters)
 	v1Manga.GET("/downloaded-series", h.HandleGetDownloadedMangaSeries)
+	v1Manga.GET("/downloaded-series/paged", h.HandleGetDownloadedMangaSeriesPaged)
 	v1Manga.POST("/refresh-downloaded-cache", h.HandleRefreshDownloadedMangaCache)
 	v1Manga.GET("/downloads", h.HandleGetMangaDownloadsList)
 	v1Manga.POST("/download-chapters", h.HandleDownloadMangaChapters)
@@ -576,28 +577,28 @@ func headMethodMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		// Skip directstream route
 		if strings.Contains(c.Request().URL.Path, "/directstream/stream") ||
-            strings.Contains(c.Request().URL.Path, "/mediastream/direct") {
-            return next(c)
-        }
+			strings.Contains(c.Request().URL.Path, "/mediastream/direct") {
+			return next(c)
+		}
 
-        if c.Request().Method == http.MethodHead {
-            // Set the method to GET temporarily to reuse the handler
-            c.Request().Method = http.MethodGet
+		if c.Request().Method == http.MethodHead {
+			// Set the method to GET temporarily to reuse the handler
+			c.Request().Method = http.MethodGet
 
-            defer func() {
-                c.Request().Method = http.MethodHead
-            }() // Restore method after
+			defer func() {
+				c.Request().Method = http.MethodHead
+			}() // Restore method after
 
-            // Call the next handler and then clear the response body
-            if err := next(c); err != nil {
-                if err.Error() == echo.ErrMethodNotAllowed.Error() {
-                    return c.NoContent(http.StatusOK)
-                }
+			// Call the next handler and then clear the response body
+			if err := next(c); err != nil {
+				if err.Error() == echo.ErrMethodNotAllowed.Error() {
+					return c.NoContent(http.StatusOK)
+				}
 
-                return err
-            }
-        }
+				return err
+			}
+		}
 
-        return next(c)
-    }
+		return next(c)
+	}
 }

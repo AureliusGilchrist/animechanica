@@ -83,6 +83,7 @@ export function RelationsRecommendationsSection(props: RelationsRecommendationsS
         ;(async () => {
             try {
                 const results = await Promise.allSettled(toFetch.map(async (id) => {
+                    console.log("[RelationsRecommendations] dir-exists check id=", id)
                     const resp = await fetch(`/api/v1/library/anime-entry/dir-exists/${id}`)
                     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
                     const data = await resp.json() as { exists?: boolean }

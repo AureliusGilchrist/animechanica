@@ -1,5 +1,7 @@
+"use client"
+ 
 import React from "react"
-import { useGetDownloadedMangaSeries, useRefreshDownloadedMangaCache, DownloadedMangaSeries } from "@/api/hooks/manga_downloaded.hooks"
+import { useGetDownloadedMangaSeriesInfinite, useRefreshDownloadedMangaCache, DownloadedMangaSeries } from "@/api/hooks/manga_downloaded.hooks"
 import { PageWrapper } from "@/components/shared/page-wrapper"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Button } from "@/components/ui/button"
@@ -18,7 +20,15 @@ type DownloadedMangaLibraryViewProps = {
 
 export function DownloadedMangaLibraryView(props: DownloadedMangaLibraryViewProps) {
     const { search, selectedGenres = [], mediaGenresById = {} } = props
-    const { data: downloadedSeries, isLoading, error, refetch } = useGetDownloadedMangaSeries()
+    const {
+        data,
+        isLoading,
+        error,
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage,
+        refetch,
+    } = useGetDownloadedMangaSeriesInfinite({ q: search })
     const refreshCacheMutation = useRefreshDownloadedMangaCache()
 
     const handleRefreshCache = () => {
@@ -56,22 +66,44 @@ export function DownloadedMangaLibraryView(props: DownloadedMangaLibraryViewProp
         )
     }
 
-    // Apply client-side filtering by title using the provided search term
-    const filtered = React.useMemo(() => {
-        const list = downloadedSeries || []
-        const q = (search || "").trim().toLowerCase()
-        const titleFiltered = q ? list.filter((s) => s.seriesTitle?.toLowerCase().includes(q)) : list
-
-        // Apply genre filtering if any selected
-        if (!selectedGenres.length) return titleFiltered
-        return titleFiltered.filter((s) => {
+    // Flatten items from pages
+    const items = React.useMemo(() => {
+        const list = data?.pages?.flatMap(p => p.items) ?? []
+        if (!selectedGenres.length) return list
+        return list.filter((s) => {
             if (!s.mediaId) return false
             const g = mediaGenresById[s.mediaId]
             if (!g || !g.length) return false
-            // OR match: include if any selected genre is present
             return selectedGenres.some((sel) => g.includes(sel))
         })
-    }, [downloadedSeries, search, selectedGenres, mediaGenresById])
+    }, [data, selectedGenres, mediaGenresById])
+
+    // Infinite scroll sentinel
+    const sentinelRef = React.useRef<HTMLDivElement | null>(null)
+    const observerRef = React.useRef<IntersectionObserver | null>(null)
+    React.useEffect(() => {
+        // Disconnect any previous observer before creating a new one
+        observerRef.current?.disconnect()
+        observerRef.current = null
+
+        if (!sentinelRef.current) return
+        if (!hasNextPage) return
+
+        const el = sentinelRef.current
+        const observer = new IntersectionObserver((entries) => {
+            const [entry] = entries
+            if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+                fetchNextPage()
+            }
+        })
+        observer.observe(el)
+        observerRef.current = observer
+
+        return () => {
+            observerRef.current?.disconnect()
+            observerRef.current = null
+        }
+    }, [fetchNextPage, hasNextPage, isFetchingNextPage, search])
 
     return (
         <PageWrapper className="space-y-6">
@@ -79,7 +111,7 @@ export function DownloadedMangaLibraryView(props: DownloadedMangaLibraryViewProp
                 <div>
                     <h1 className="text-3xl font-bold">Downloaded Manga</h1>
                     <p className="text-muted-foreground mt-1">
-                        {(filtered?.length ?? downloadedSeries?.length ?? 0)} series downloaded
+                        {data?.pages?.[0]?.total ?? 0} total
                     </p>
                 </div>
                 <Button
@@ -93,7 +125,7 @@ export function DownloadedMangaLibraryView(props: DownloadedMangaLibraryViewProp
                 </Button>
             </div>
 
-            {!filtered || filtered.length === 0 ? (
+            {!items || items.length === 0 ? (
                 <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
                     <div className="text-center">
                         <h3 className="text-lg font-medium text-muted-foreground">No downloaded manga found</h3>
@@ -103,8 +135,9 @@ export function DownloadedMangaLibraryView(props: DownloadedMangaLibraryViewProp
                     </div>
                 </div>
             ) : (
-                <MediaCardLazyGrid itemCount={filtered.length}>
-                    {filtered.map((series) => (
+                // Key the grid by search term to force a clean remount on new searches (prevents stale IO observers/state)
+                <MediaCardLazyGrid key={`grid-${search || "all"}`} itemCount={items.length}>
+                    {items.map((series) => (
                         <DownloadedMangaCard
                             key={series.seriesPath}
                             series={series}
@@ -112,6 +145,13 @@ export function DownloadedMangaLibraryView(props: DownloadedMangaLibraryViewProp
                     ))}
                 </MediaCardLazyGrid>
             )}
+
+            {/* Infinite loader */}
+            <div ref={sentinelRef} className="flex items-center justify-center py-6">
+                {isFetchingNextPage ? <LoadingSpinner /> : hasNextPage ? (
+                    <Button onClick={() => fetchNextPage()} intent="white" size="sm">Load more</Button>
+                ) : null}
+            </div>
         </PageWrapper>
     )
 }
@@ -126,12 +166,9 @@ function DownloadedMangaCard({ series }: DownloadedMangaCardProps) {
         ? `/manga/entry?id=${series.mediaId}` 
         : `/manga/local/${encodeURIComponent(series.seriesTitle)}`
 
-    // Prefer Kitsu poster when available, fallback to local cover if present
+    // Always use Kitsu poster when available (no local fallback)
     const { url: kitsuPoster } = useKitsuPoster(series.seriesTitle)
-    const localCover = series.coverImagePath
-        ? `/api/v1/manga/local-page/${encodeURIComponent(series.coverImagePath)}`
-        : null
-    const imgSrc = kitsuPoster || localCover || "/no-cover.png"
+    const imgSrc = kitsuPoster || "/no-cover.png"
 
     return (
         <Link href={detailsLink}>

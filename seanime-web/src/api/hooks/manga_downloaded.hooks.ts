@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient, UseQueryResult, useInfiniteQuery } from "@tanstack/react-query"
 import { useEffect } from "react"
 import { useServerStatus } from "@/app/(main)/_hooks/use-server-status"
 
@@ -10,6 +10,42 @@ export type DownloadedMangaSeries = {
     chapterCount: number
     chapters: DownloadedMangaChapter[]
     lastUpdated: number
+}
+
+// Infinite query for paginated downloaded manga series
+export type DownloadedMangaSeriesPaged = {
+    items: DownloadedMangaSeries[]
+    total: number
+    page: number
+    pageSize: number
+}
+
+export function useGetDownloadedMangaSeriesInfinite(params?: { q?: string; pageSize?: number }) {
+    const serverStatus = useServerStatus()
+    const pageSize = params?.pageSize ?? 35
+    const q = params?.q?.trim() ?? ""
+
+    return useInfiniteQuery<DownloadedMangaSeriesPaged>({
+        queryKey: ["downloaded-manga-series-paged", { q, pageSize }],
+        enabled: true,
+        initialPageParam: 1,
+        getNextPageParam: (lastPage) => {
+            const loaded = lastPage.page * lastPage.pageSize
+            if (loaded >= lastPage.total) return undefined
+            return lastPage.page + 1
+        },
+        queryFn: async ({ pageParam }): Promise<DownloadedMangaSeriesPaged> => {
+            const params = new URLSearchParams()
+            params.set("page", String(pageParam ?? 1))
+            params.set("pageSize", String(pageSize))
+            if (q) params.set("q", q)
+            const res = await fetch(`/api/v1/manga/downloaded-series/paged?${params.toString()}`)
+            if (!res.ok) throw new Error("Failed to fetch downloaded manga (paged)")
+            return (await res.json()) as DownloadedMangaSeriesPaged
+        },
+        refetchOnWindowFocus: false,
+        staleTime: 5 * 60 * 1000,
+    })
 }
 
 export type DownloadedMangaChapter = {
