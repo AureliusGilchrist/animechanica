@@ -39,6 +39,12 @@ export const TopMenu: React.FC<TopMenuProps> = (props) => {
                     intent="alert-solid"
                 /> : undefined,
             },
+            {
+                href: "/missing",
+                icon: null,
+                isCurrent: pathname.startsWith("/missing"),
+                name: "Missing",
+            },
             ...[serverStatus?.settings?.library?.enableManga && {
                 href: "/manga",
                 icon: null,

@@ -79,13 +79,19 @@ export function AnilistAnimeEntryList(props: AnilistAnimeEntryListProps) {
     }, [list?.entries, normalizeSeriesTitle, chronologicalKey])
 
     // Client-side pagination to reduce render cost (after sorting)
-    const entries = (sortedEntries ?? []) as NonNullable<NonNullable<typeof list>["entries"]>
+    const [reverseOrder, setReverseOrder] = React.useState(true)
+
+    // Apply reverse only when toggled on
+    const displayEntries = React.useMemo(() => {
+        const base = (sortedEntries ?? []) as NonNullable<NonNullable<typeof list>["entries"]>
+        return reverseOrder ? base.slice().reverse() : base
+    }, [sortedEntries, reverseOrder])
     const [page, setPage] = React.useState(1)
     const pageSize = 36
-    const pageCount = Math.max(1, Math.ceil(entries.length / pageSize))
+    const pageCount = Math.max(1, Math.ceil(displayEntries.length / pageSize))
     const start = (page - 1) * pageSize
     const end = start + pageSize
-    const pageEntries = entries.slice(start, end)
+    const pageEntries = displayEntries.slice(start, end)
 
     // Map of mediaId -> folder exists (for blue badge)
     const [folderExists, setFolderExists] = React.useState<Record<number, boolean>>({})
@@ -128,8 +134,22 @@ export function AnilistAnimeEntryList(props: AnilistAnimeEntryListProps) {
         setPage(1)
     }, [list?.entries])
 
+    // Reset page when order changes
+    React.useEffect(() => {
+        setPage(1)
+    }, [reverseOrder])
+
     return (
         <div data-anilist-anime-entry-list className="space-y-4">
+            <div className="flex items-center justify-between gap-2">
+                <div className="text-sm text-[--muted]">Order: {reverseOrder ? "Z→A / Newest→Oldest" : "A→Z / Oldest→Newest"}</div>
+                <button
+                    className="px-3 py-1 rounded border"
+                    onClick={() => setReverseOrder(v => !v)}
+                >
+                    Reverse order
+                </button>
+            </div>
             <MediaCardLazyGrid itemCount={pageEntries.length}>
                 {pageEntries.filter(Boolean).map((entry) => (
                 <MediaEntryCard
