@@ -3,14 +3,15 @@ package anime
 import (
 	"bytes"
 	"fmt"
-	"github.com/samber/lo"
-	lop "github.com/samber/lo/parallel"
 	"path/filepath"
 	"seanime/internal/util"
 	"seanime/internal/util/comparison"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/samber/lo"
+	lop "github.com/samber/lo/parallel"
 )
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -53,11 +54,17 @@ func (f *LocalFile) HasBeenWatched(progress int) bool {
 // GetType returns the metadata type.
 // This requires the LocalFile to be hydrated.
 func (f *LocalFile) GetType() LocalFileType {
+	if f == nil || f.Metadata == nil {
+		return ""
+	}
 	return f.Metadata.Type
 }
 
 // IsMain returns true if the metadata type is LocalFileTypeMain
 func (f *LocalFile) IsMain() bool {
+	if f == nil || f.Metadata == nil {
+		return false
+	}
 	return f.Metadata.Type == LocalFileTypeMain
 }
 
@@ -70,6 +77,9 @@ func (f *LocalFile) GetMetadata() *LocalFileMetadata {
 // GetAniDBEpisode returns the metadata AniDB episode number.
 // This requires the LocalFile to be hydrated.
 func (f *LocalFile) GetAniDBEpisode() string {
+	if f == nil || f.Metadata == nil {
+		return ""
+	}
 	return f.Metadata.AniDBEpisode
 }
 

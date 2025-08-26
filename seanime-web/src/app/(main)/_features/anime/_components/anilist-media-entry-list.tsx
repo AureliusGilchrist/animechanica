@@ -65,11 +65,12 @@ export function AnilistAnimeEntryList(props: AnilistAnimeEntryListProps) {
         const result: typeof raw = []
         for (const k of groupKeys) {
             const arr = groups.get(k)!
+            // Reverse chronological within the same series (newest -> oldest)
             arr.sort((a, b) => {
                 const ak = chronologicalKey(a)
                 const bk = chronologicalKey(b)
                 for (let i = 0; i < ak.length; i++) {
-                    if (ak[i] !== bk[i]) return (ak[i] as number) - (bk[i] as number)
+                    if (ak[i] !== bk[i]) return (bk[i] as number) - (ak[i] as number)
                 }
                 return 0
             })

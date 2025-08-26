@@ -120,6 +120,28 @@ export function UnmatchedFileManager(props: UnmatchedFileManagerProps) {
         }
     }
 
+    /**
+     * Repair-match the selected unmatched files to the specified AniList ID using hard-match.
+     * This keeps auto-block settings intact and only targets the selected (unmatched) paths.
+     */
+    function handleRepairSelected() {
+        if (!!currentGroup && anilistId > 0 && selectedPaths.length > 0) {
+            updateLocalFiles({
+                paths: selectedPaths,
+                action: "hard-match",
+                mediaId: anilistId,
+            }, {
+                onSuccess: () => {
+                    toast.success("Matches repaired")
+                    onActionSuccess()
+                },
+                onError: (e: any) => {
+                    toast.error(e?.message || "Failed to repair matches")
+                },
+            })
+        }
+    }
+
     const handleFetchSuggestions = React.useCallback(() => {
         fetchSuggestions({
             dir: currentGroup.dir,
@@ -204,6 +226,11 @@ export function UnmatchedFileManager(props: UnmatchedFileManagerProps) {
                             onClick={handleMatchSelected}
                             disabled={isUpdating}
                         >Match selection</Button>
+                        <Button
+                            intent="primary"
+                            onClick={handleRepairSelected}
+                            disabled={isUpdating || anilistId <= 0 || selectedPaths.length === 0}
+                        >Repair selection</Button>
                     </div>
 
                     {/*<div className="flex flex-1">*/}

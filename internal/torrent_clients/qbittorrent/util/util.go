@@ -3,13 +3,17 @@ package qbittorrent_util
 import (
 	"bytes"
 	"fmt"
-	"github.com/goccy/go-json"
+	stdjson "encoding/json" // stdlib json
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-	"seanime/internal/torrent_clients/qbittorrent/model"
+	"regexp"
 	"strings"
+
+	qbittorrent_model "seanime/internal/torrent_clients/qbittorrent/model"
+
+	"github.com/goccy/go-json"
 )
 
 func GetInto(client *http.Client, target interface{}, url string, body interface{}) (err error) {
@@ -40,11 +44,42 @@ func GetInto(client *http.Client, target interface{}, url string, body interface
 		return err
 	}
 	if err := json.NewDecoder(bytes.NewReader(buf)).Decode(target); err != nil {
+		// Fallback 1: sanitize NaN/Infinity values sometimes returned by qBittorrent
+		sanitized := sanitizeNonStandardNumbers(buf)
+		if !bytes.Equal(sanitized, buf) {
+			if err3 := json.NewDecoder(bytes.NewReader(sanitized)).Decode(target); err3 == nil {
+				return nil
+			}
+			// Try stdlib decoder on sanitized buffer
+			if err4 := stdjson.NewDecoder(bytes.NewReader(sanitized)).Decode(target); err4 == nil {
+				return nil
+			}
+		}
+		// Try stdlib decoder on original buffer
+		if err5 := stdjson.NewDecoder(bytes.NewReader(buf)).Decode(target); err5 == nil {
+			return nil
+		}
+		// Fallback 2: endpoints that return a raw string (e.g., version)
+		ct := resp.Header.Get("Content-Type")
+		snippet := string(buf)
+		if len(snippet) > 512 {
+			snippet = snippet[:512] + "..."
+		}
 		if err2 := json.NewDecoder(strings.NewReader(`"` + string(buf) + `"`)).Decode(target); err2 != nil {
-			return err
+			return fmt.Errorf("qbittorrent_util.GetInto: failed to decode JSON: %v (status=%s, content-type=%s) body_snippet=%q", err, resp.Status, ct, snippet)
 		}
 	}
 	return nil
+}
+
+// sanitizeNonStandardNumbers replaces non-standard JSON numeric tokens with null.
+// qBittorrent may return NaN/Infinity for some float fields which is invalid JSON.
+// We perform a conservative replacement outside of strings by looking for colon-value patterns.
+func sanitizeNonStandardNumbers(b []byte) []byte {
+	// Regex: colon, optional spaces, then NaN or +/-Infinity
+	// Replace with ": null"
+	re := regexp.MustCompile(`:\s*(NaN|Infinity|-Infinity)`) // best-effort
+	return re.ReplaceAll(b, []byte(`: null`))
 }
 
 func Post(client *http.Client, url string, body interface{}) (err error) {
@@ -220,6 +255,20 @@ func GetIntoWithContentType(client *http.Client, target interface{}, url string,
 		return err
 	}
 	if err := json.NewDecoder(bytes.NewReader(buf)).Decode(target); err != nil {
+		// Fallback 1: sanitize invalid JSON numeric tokens
+		sanitized := sanitizeNonStandardNumbers(buf)
+		if !bytes.Equal(sanitized, buf) {
+			if err3 := json.NewDecoder(bytes.NewReader(sanitized)).Decode(target); err3 == nil {
+				return nil
+			}
+			if err4 := stdjson.NewDecoder(bytes.NewReader(sanitized)).Decode(target); err4 == nil {
+				return nil
+			}
+		}
+		if err5 := stdjson.NewDecoder(bytes.NewReader(buf)).Decode(target); err5 == nil {
+			return nil
+		}
+		// Fallback 2: raw string endpoints
 		if err2 := json.NewDecoder(strings.NewReader(`"` + string(buf) + `"`)).Decode(target); err2 != nil {
 			return err
 		}

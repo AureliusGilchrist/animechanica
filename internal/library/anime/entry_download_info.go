@@ -156,6 +156,9 @@ func NewEntryDownloadInfo(opts *NewEntryDownloadInfoOptions) (*EntryDownloadInfo
 	if opts.LocalFiles != nil {
 		// Get all episode numbers of main local files
 		for _, lf := range opts.LocalFiles {
+			if lf == nil || lf.Metadata == nil {
+				continue
+			}
 			if lf.Metadata.Type == LocalFileTypeMain {
 				lfsEpSlice.add(lf.Metadata.Episode, lf.Metadata.AniDBEpisode)
 			}
@@ -166,6 +169,9 @@ func NewEntryDownloadInfo(opts *NewEntryDownloadInfoOptions) (*EntryDownloadInfo
 	toDownloadSlice.filter(func(item *episodeSliceItem, index int) bool {
 		isDownloaded := false
 		for _, lf := range opts.LocalFiles {
+			if lf == nil || lf.Metadata == nil {
+				continue
+			}
 			if lf.Metadata.Type != LocalFileTypeMain {
 				continue
 			}

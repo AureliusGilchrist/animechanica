@@ -381,6 +381,7 @@ func (h *Handler) HandleListLinkedAnimeFiles(c echo.Context) error {
 		blockedParam = "any"
 	}
 	mediaIdParam := c.QueryParam("mediaId")
+	includeUnmatchedParam := c.QueryParam("includeUnmatched") // true|false (default false)
 	pageParam := c.QueryParam("page")
 	pageSizeParam := c.QueryParam("pageSize")
 	hiddenParam := c.QueryParam("hidden") // include|exclude|only
@@ -418,9 +419,18 @@ func (h *Handler) HandleListLinkedAnimeFiles(c echo.Context) error {
 		return h.RespondWithError(c, err)
 	}
 
-	// Filter linked files
+	// Filter linked files (optionally include unmatched)
 	filtered := lo.Filter(lfs, func(lf *anime.LocalFile, _ int) bool {
 		if lf.MediaId == 0 {
+			// Only include unmatched if explicitly requested
+			if strings.EqualFold(includeUnmatchedParam, "true") {
+				// When unmatched, only include if no mediaId filter is applied
+				// or if it previously belonged to the requested mediaId
+				if mediaId != 0 {
+					return lf.PreviousMediaId == mediaId
+				}
+				return true
+			}
 			return false
 		}
 		if mediaId != 0 && lf.MediaId != mediaId {
@@ -712,14 +722,14 @@ func (h *Handler) HandleLocalFileBulkAction(c echo.Context) error {
 func (h *Handler) HandleUpdateLocalFileData(c echo.Context) error {
 
 	type body struct {
-		Path     string                   `json:"path"`
-		Metadata *anime.LocalFileMetadata `json:"metadata"`
-		Locked   bool                     `json:"locked"`
-		Ignored  bool                     `json:"ignored"`
-		MediaId  int                      `json:"mediaId"`
+		Path     string                    `json:"path"`
+		Metadata *anime.LocalFileMetadata  `json:"metadata,omitempty"`
+		Locked   *bool                     `json:"locked,omitempty"`
+		Ignored  *bool                     `json:"ignored,omitempty"`
+		MediaId  *int                      `json:"mediaId,omitempty"`
 		// Optional: set link source explicitly when updating a single file
-		LinkSource       string `json:"linkSource,omitempty"`
-		AutoMatchBlocked *bool  `json:"autoMatchBlocked,omitempty"`
+		LinkSource       *string `json:"linkSource,omitempty"`
+		AutoMatchBlocked *bool   `json:"autoMatchBlocked,omitempty"`
 	}
 
 	b := new(body)
@@ -739,12 +749,20 @@ func (h *Handler) HandleUpdateLocalFileData(c echo.Context) error {
 	if !found {
 		return h.RespondWithError(c, errors.New("local file not found"))
 	}
-	lf.Metadata = b.Metadata
-	lf.Locked = b.Locked
-	lf.Ignored = b.Ignored
-	lf.MediaId = b.MediaId
-	if b.LinkSource != "" {
-		lf.LinkSource = b.LinkSource
+	if b.Metadata != nil {
+		lf.Metadata = b.Metadata
+	}
+	if b.Locked != nil {
+		lf.Locked = *b.Locked
+	}
+	if b.Ignored != nil {
+		lf.Ignored = *b.Ignored
+	}
+	if b.MediaId != nil {
+		lf.MediaId = *b.MediaId
+	}
+	if b.LinkSource != nil && *b.LinkSource != "" {
+		lf.LinkSource = *b.LinkSource
 	}
 	if b.AutoMatchBlocked != nil {
 		lf.AutoMatchBlocked = *b.AutoMatchBlocked
@@ -809,6 +827,8 @@ func (h *Handler) HandleUpdateLocalFiles(c echo.Context) error {
 			lf.Locked = false
 		case "unmatch":
 			prevSource := lf.LinkSource
+			lf.PreviousMediaId = lf.MediaId
+			lf.ResolvedState = "unmatched"
 			lf.MediaId = 0
 			lf.Locked = false
 			lf.Ignored = false
@@ -823,6 +843,12 @@ func (h *Handler) HandleUpdateLocalFiles(c echo.Context) error {
 			// Mark as manual match and clear any block
 			lf.LinkSource = "manual"
 			lf.AutoMatchBlocked = false
+		case "hard-match":
+			// Same as match, but do NOT clear AutoMatchBlocked.
+			lf.MediaId = b.MediaId
+			lf.Locked = true
+			lf.Ignored = false
+			lf.LinkSource = "manual"
 		case "unblock-auto":
 			lf.AutoMatchBlocked = false
 		}

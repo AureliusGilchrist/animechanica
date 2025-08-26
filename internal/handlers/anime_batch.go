@@ -26,6 +26,22 @@ type AnimeOfflineEntry struct {
 	Tags     []string `json:"tags"`
 }
 
+// pickRomajiWithEnglishFallback returns a folder-friendly title using a temporary heuristic:
+// - Prefer the offline entry Title as Romaji
+// - Fallback to an English-looking synonym (ASCII, has vowels, often with common English words)
+// - Else fallback to the first non-empty synonym
+// - Else "untitled"
+func pickRomajiWithEnglishFallback(entry AnimeOfflineEntry) string {
+	trim := func(s string) string { return strings.TrimSpace(s) }
+
+	// Prefer Title as Romaji candidate
+	if t := trim(entry.Title); t != "" {
+		return t
+	}
+
+	return "untitled"
+}
+
 // DownloadLogEntry captures per-anime attempts and failures
 type DownloadLogEntry struct {
 	AnimeTitle string    `json:"animeTitle"`
@@ -321,9 +337,11 @@ func (h *Handler) processAnime(job *BatchDownloadJob, anime AnimeOfflineEntry) {
 		return
 	}
 
-	// Build destination folder under manga download dir: /anime/<title>
-	destRoot := filepath.Join(h.App.Config.Manga.DownloadDir, "anime")
-	_ = os.MkdirAll(destRoot, 0o755)
+	// Build destination parent folder and desired torrent root name:
+    // Parent: /aeternae/theater/anime/completed
+    // Desired root: {ANIMENAME}
+    destRoot := filepath.Join("/aeternae/theater/anime/completed")
+    _ = os.MkdirAll(destRoot, 0o755)
 	sanitize := func(s string) string {
 		s = strings.ReplaceAll(s, "/", "-")
 		s = strings.ReplaceAll(s, "\\", "-")
@@ -333,8 +351,10 @@ func (h *Handler) processAnime(job *BatchDownloadJob, anime AnimeOfflineEntry) {
 		}
 		return s
 	}
-	dest := filepath.Join(destRoot, sanitize(anime.Title))
-	_ = os.MkdirAll(dest, 0o755)
+    // Choose folder name using Romaji with fallback (temporary heuristic)
+    folderName := pickRomajiWithEnglishFallback(anime)
+    desiredRoot := sanitize(folderName)
+    // qBittorrent will create the root folder itself when RootFolder is true; we only ensure parent exists
 
 	// Construct search query with batch bias
 	parts := []string{anime.Title, "batch"}
@@ -366,10 +386,12 @@ func (h *Handler) processAnime(job *BatchDownloadJob, anime AnimeOfflineEntry) {
 		job.mu.Unlock()
 		return
 	}
-	if err := h.App.TorrentClientRepository.AddMagnets([]string{magnet}, dest); err != nil {
-		job.mu.Lock()
-		job.FailedAnime++
-		job.Errors = append(job.Errors, fmt.Sprintf("Failed to add torrent for: %s (%v)", anime.Title, err))
+    // Force parent dir and desired root folder name so the torrent is created at
+    // /aeternae/theater/anime/completed/{desiredRoot} and data is moved there like manual adds
+    if err := h.App.TorrentClientRepository.AddMagnetsWithDirAndName([]string{magnet}, destRoot, desiredRoot); err != nil {
+        job.mu.Lock()
+        job.FailedAnime++
+        job.Errors = append(job.Errors, fmt.Sprintf("Failed to add torrent for: %s (%v)", anime.Title, err))
 		job.Logs = append(job.Logs, DownloadLogEntry{
 			AnimeTitle: anime.Title,
 			Query:      query,

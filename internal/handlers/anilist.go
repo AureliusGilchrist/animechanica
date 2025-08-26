@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"seanime/internal/api/anilist"
+	"seanime/internal/api/kitsu"
 	"seanime/internal/events"
 	"seanime/internal/util/result"
 	"strconv"
@@ -155,6 +156,27 @@ func (h *Handler) HandleGetAnilistAnimeDetails(c echo.Context) error {
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
+
+    // Enrich with Kitsu synopsis using cached lookup by title
+    // AnimeDetailsById_Media does not expose Title/CoverImage/BannerImage directly,
+    // so fetch BaseAnime to resolve a safe preferred title.
+    if details != nil {
+        base, berr := h.App.AnilistPlatform.GetAnime(c.Request().Context(), mId)
+        if berr == nil && base != nil {
+            title := base.GetPreferredTitle()
+            if title != "" {
+                if assets, aerr := kitsu.CachedAnimeAssetsByTitle(c.Request().Context(), title, nil); aerr == nil && assets != nil {
+                    // Prefer Kitsu synopsis if provided
+                    if assets.Synopsis != "" {
+                        details.Description = &assets.Synopsis
+                    }
+                    // Note: AnimeDetailsById_Media has no BannerImage/CoverImage fields.
+                    // Do not attempt to set them to avoid build/runtime errors.
+                }
+            }
+        }
+    }
+
 	detailsCache.Set(mId, details)
 
 	return h.RespondWithData(c, details)

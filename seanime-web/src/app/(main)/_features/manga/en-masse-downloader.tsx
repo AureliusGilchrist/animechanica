@@ -9,13 +9,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import React from "react"
 import { BiPlay, BiStop } from "react-icons/bi"
 import { toast } from "sonner"
-import { AllAnimeDownloaderScreen } from "../../anime-batch-downloader/_screens/all-anime-downloader-screen"
+import { NyaaCrawlerScreen } from "../nyaa-crawler/nyaa-crawler-screen"
 
 function MangaEnMasseDownloader() {
     const { data: status, isLoading } = useGetEnMasseDownloaderStatus()
     const startMutation = useStartEnMasseDownloader()
     const stopMutation = useStopEnMasseDownloader()
-
+    
     const handleStart = () => {
         startMutation.mutate(undefined, {
             onSuccess: () => {
@@ -239,7 +239,7 @@ export function EnMasseDownloader() {
                 </TabsContent>
                 
                 <TabsContent value="anime" className="mt-6">
-                    <AllAnimeDownloaderScreen />
+                    <NyaaCrawlerScreen />
                 </TabsContent>
             </Tabs>
         </div>

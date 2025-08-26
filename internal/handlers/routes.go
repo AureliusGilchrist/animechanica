@@ -258,13 +258,12 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	//
 	v1.GET("/anime/episode-collection/:id", h.HandleGetAnimeEpisodeCollection)
 
-	// Anime Batch Downloader
-	v1.GET("/anime/download-all/status", h.HandleGetAllAnimeDownloadStatus)
-	v1.POST("/anime/database/load", h.HandleLoadAnimeDatabase)
-	v1.POST("/anime/download-all", h.HandleStartAllAnimeDownload)
-	v1.POST("/anime/download-all/cancel", h.HandleCancelAllAnimeDownload)
-	v1.GET("/anime/database/stats", h.HandleGetAnimeDatabaseStats)
-	v1.POST("/anime/download-all/preview", h.HandlePreviewAllAnimeDownload)
+	// Nyaa Crawler
+	v1.GET("/nyaa-crawler/status", h.HandleGetNyaaCrawlerStatus)
+	v1.GET("/nyaa-crawler/config", h.HandleGetNyaaCrawlerConfig)
+	v1.POST("/nyaa-crawler/config", h.HandleUpdateNyaaCrawlerConfig)
+	v1.POST("/nyaa-crawler/start", h.HandleStartNyaaCrawler)
+	v1.POST("/nyaa-crawler/stop", h.HandleStopNyaaCrawler)
 
 	//
 	// Torrent / Torrent Client
@@ -402,6 +401,20 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1Manga.POST("/remove-mapping", h.HandleRemoveMangaMapping)
 
 	v1Manga.GET("/local-page/:path", h.HandleGetLocalMangaPage)
+
+	//
+	// Light Novels
+	//
+
+	v1LightNovels := v1.Group("/light-novels")
+	v1LightNovels.GET("/series", h.HandleGetLightNovelSeries)
+	v1LightNovels.GET("/series/:id", h.HandleGetLightNovelSeriesDetails)
+	v1LightNovels.GET("/epub", h.HandleServeLightNovelEPUB)
+	v1LightNovels.POST("/epub", h.HandleServeLightNovelEPUB)
+	// Bookmarks
+	v1LightNovels.GET("/bookmarks", h.HandleGetLightNovelBookmarks)
+	v1LightNovels.POST("/bookmarks", h.HandleSaveLightNovelBookmark)
+	v1LightNovels.DELETE("/bookmarks", h.HandleDeleteLightNovelBookmark)
 
 	//
 	// File Cache

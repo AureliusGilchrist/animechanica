@@ -52,6 +52,12 @@ export const TopMenu: React.FC<TopMenuProps> = (props) => {
                 name: "Manga",
             }].filter(Boolean) as NavigationMenuProps["items"],
             {
+                href: "/light-novels",
+                icon: null,
+                isCurrent: pathname.startsWith("/light-novels"),
+                name: "Light Novels",
+            },
+            {
                 href: "/discover",
                 icon: null,
                 isCurrent: pathname.startsWith("/discover") || pathname.startsWith("/search"),

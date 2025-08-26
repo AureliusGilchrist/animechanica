@@ -101,10 +101,15 @@ func NewMissingEpisodes(opts *NewMissingEpisodesOptions) *MissingEpisodes {
 			}
 
 			episodes := downloadInfo.EpisodesToDownload
+            // Filter out nil items defensively
+            episodes = lo.Filter(episodes, func(item *EntryDownloadEpisode, _ int) bool {
+                return item != nil && item.Episode != nil
+            })
 
-			sort.Slice(episodes, func(i, j int) bool {
-				return episodes[i].Episode.GetEpisodeNumber() < episodes[j].Episode.GetEpisodeNumber()
-			})
+            sort.Slice(episodes, func(i, j int) bool {
+                // Safe because we filtered nils above
+                return episodes[i].Episode.GetEpisodeNumber() < episodes[j].Episode.GetEpisodeNumber()
+            })
 
 			// If there are more than 1 episode to download, modify the name of the first episode
 			if len(episodes) > 1 {
@@ -123,9 +128,13 @@ func NewMissingEpisodes(opts *NewMissingEpisodesOptions) *MissingEpisodes {
 
 	// Flatten
 	flattenedEpsToDownload := lo.Flatten(epsToDownload)
-	eps := lop.Map(flattenedEpsToDownload, func(item *EntryDownloadEpisode, _ int) *Episode {
-		return item.Episode
-	})
+    // Filter again to be extra safe across all groups
+    flattenedEpsToDownload = lo.Filter(flattenedEpsToDownload, func(item *EntryDownloadEpisode, _ int) bool {
+        return item != nil && item.Episode != nil
+    })
+    eps := lop.Map(flattenedEpsToDownload, func(item *EntryDownloadEpisode, _ int) *Episode {
+        return item.Episode
+    })
 	// Sort
 	sort.Slice(eps, func(i, j int) bool {
 		return eps[i].GetEpisodeNumber() < eps[j].GetEpisodeNumber()

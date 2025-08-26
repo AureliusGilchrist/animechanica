@@ -391,7 +391,7 @@ func (r *Repository) GetActiveTorrents() ([]*Torrent, error) {
 }
 
 func (r *Repository) AddMagnets(magnets []string, dest string) error {
-	r.logger.Trace().Any("magnets", magnets).Msg("torrent client: Adding magnets")
+	r.logger.Trace().Any("magnets", magnets).Str("dest", dest).Msg("torrent client: Adding magnets")
 
 	if len(magnets) == 0 {
 		r.logger.Debug().Msg("torrent client: No magnets to add")
@@ -401,9 +401,14 @@ func (r *Repository) AddMagnets(magnets []string, dest string) error {
 	var err error
 	switch r.provider {
 	case QbittorrentClient:
+		// Important for correct save-path behavior:
+		// - UseAutoTMM=false ensures qBittorrent does NOT override the provided savepath with category rules
+		// - RootFolder="true" forces creating a root folder (like manual mode "Create subfolder")
 		err = r.qBittorrentClient.Torrent.AddURLs(magnets, &qbittorrent_model.AddTorrentsOptions{
-			Savepath: dest,
-			Tags:     r.qBittorrentClient.Tags,
+			Savepath:   dest,
+			Tags:       r.qBittorrentClient.Tags,
+			UseAutoTMM: false,
+			RootFolder: "true",
 		})
 	case TransmissionClient:
 		for _, magnet := range magnets {
@@ -427,6 +432,53 @@ func (r *Repository) AddMagnets(magnets []string, dest string) error {
 
 	r.logger.Debug().Msg("torrent client: Added torrents")
 
+	return nil
+}
+
+// AddMagnetsWithDirAndName adds magnets and, when supported, enforces the parent directory and the desired
+// root folder name for the torrent contents. For qBittorrent this uses the "rename" option so that the root
+// folder matches the provided name (similar to manually renaming the torrent on add). Transmission does not
+// support renaming on add via API, so it only uses the parent directory.
+func (r *Repository) AddMagnetsWithDirAndName(magnets []string, parentDir string, desiredRootName string) error {
+	r.logger.Trace().Any("magnets", magnets).Str("parentDir", parentDir).Str("name", desiredRootName).Msg("torrent client: Adding magnets with explicit name")
+
+	if len(magnets) == 0 {
+		r.logger.Debug().Msg("torrent client: No magnets to add")
+		return nil
+	}
+
+	var err error
+	switch r.provider {
+	case QbittorrentClient:
+		// Save to parentDir and force a root folder named desiredRootName
+		err = r.qBittorrentClient.Torrent.AddURLs(magnets, &qbittorrent_model.AddTorrentsOptions{
+			Savepath:   parentDir,
+			Rename:     desiredRootName,
+			Tags:       r.qBittorrentClient.Tags,
+			UseAutoTMM: false,
+			RootFolder: "true",
+		})
+	case TransmissionClient:
+		for _, magnet := range magnets {
+			_, err = r.transmission.Client.TorrentAdd(context.Background(), transmissionrpc.TorrentAddPayload{
+				Filename:    &magnet,
+				DownloadDir: &parentDir,
+			})
+			if err != nil {
+				r.logger.Err(err).Msg("torrent client: Error while adding magnets (Transmission)")
+				break
+			}
+		}
+	case NoneClient:
+		return errors.New("torrent client: No torrent client selected")
+	}
+
+	if err != nil {
+		r.logger.Err(err).Msg("torrent client: Error while adding magnets with name")
+		return err
+	}
+
+	r.logger.Debug().Msg("torrent client: Added torrents with explicit name")
 	return nil
 }
 

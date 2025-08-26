@@ -4,6 +4,7 @@ import (
 	"os"
 	"runtime"
 	"seanime/internal/api/anilist"
+	"seanime/internal/api/kitsu"
 	"seanime/internal/api/metadata"
 	"seanime/internal/constants"
 	"seanime/internal/continuity"
@@ -224,6 +225,8 @@ func NewApp(configOpts *ConfigOptions, selfupdater *updater.SelfUpdater) *App {
 
 	// Inject shared cacher into AniList caching helpers
 	anilist.SetSharedCacher(fileCacher)
+	// Inject shared cacher into Kitsu caching helpers
+	kitsu.SetSharedCacher(fileCacher)
 
 	// Initialize extension repository
 	extensionRepository := extension_repo.NewRepository(&extension_repo.NewRepositoryOptions{

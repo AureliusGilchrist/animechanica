@@ -36,6 +36,7 @@ export function ResolvedAnimeManager() {
     page: 1,
     pageSize: 5000,
     hidden: hiddenMode,
+    includeUnmatched: true,
   })
 
   const { mutate: unlinkFiles, isPending: isUnlinking } = useUnlinkLocalFiles()
@@ -78,7 +79,8 @@ export function ResolvedAnimeManager() {
     const map: Record<number, any[]> = {}
     const items = (localItems ?? []) as any[]
     for (const it of items) {
-      const key = it.mediaId ?? 0
+      const effectiveKey = (it.mediaId && it.mediaId !== 0) ? it.mediaId : (it.previousMediaId ?? 0)
+      const key = Number(effectiveKey || 0)
       if (!map[key]) map[key] = [] as any
       map[key]!.push(it as any)
     }
@@ -159,7 +161,9 @@ export function ResolvedAnimeManager() {
             const mediaIdNum = Number(mid)
             const title = titleMap.get(mediaIdNum) || `Media ${mediaIdNum}`
             const anyHidden = files.some((f: any) => !!f.hidden)
-            const paths = files.map(f => f.path)
+            const anyUnmatched = files.some((f: any) => !f.mediaId || f.mediaId === 0)
+            const pathsAll = files.map(f => f.path)
+            const pathsUnmatched = files.filter((f:any) => !f.mediaId || f.mediaId === 0).map((f:any) => f.path)
             return (
               <div key={`group-${mid}`} className="border-b border-[--border]">
                 {/* Group header */}
@@ -167,7 +171,39 @@ export function ResolvedAnimeManager() {
                   <div className="font-semibold">{title}</div>
                   <Badge intent="gray">{files.length} file{files.length === 1 ? "" : "s"}</Badge>
                   {anyHidden && <Badge intent="warning">Hidden</Badge>}
+                  {anyUnmatched && <Badge intent="alert">Unmatched</Badge>}
                   <div className="ml-auto flex items-center gap-2 w-[680px] max-w-full justify-end">
+                    {(() => {
+                      const allBlocked = files.every((f: any) => !!f.autoMatchBlocked)
+                      const nextValue = !allBlocked
+                      const label = allBlocked ? "Unblock auto for series" : "Block auto for series"
+                      return (
+                        <Button
+                          size="sm"
+                          intent={allBlocked ? "gray-subtle" : "warning"}
+                          disabled={isBusy || files.length === 0}
+                          onClick={async () => {
+                            if (!window.confirm(`${label}?`)) return
+                            // Optimistic UI: update local items for this mediaId
+                            setLocalItems(prev => prev.map((it: any) => it.mediaId === mediaIdNum ? { ...it, autoMatchBlocked: nextValue } : it))
+
+                            // Batch toggle block for all paths
+                            const makePromise = (path: string) => new Promise<void>((resolve) => {
+                              toggleBlock(
+                                { path, autoMatchBlocked: nextValue },
+                                { onSettled: () => resolve() }
+                              )
+                            })
+                            try {
+                              await Promise.all(files.map((f: any) => makePromise(f.path)))
+                            } finally {
+                              refetch()
+                            }
+                          }}
+                        >{label}</Button>
+                      )
+                    })()}
+                    {/* Repair matches button removed per request for Resolved Anime */}
                     <Button
                       size="sm"
                       intent={anyHidden ? "primary" : "gray-subtle"}
@@ -241,7 +277,7 @@ export function ResolvedAnimeManager() {
                         // Optimistic UI: remove this group's items immediately
                         setLocalItems(prev => prev.filter((it: any) => it.mediaId !== mediaIdNum))
                         unlinkFiles(
-                          { paths, blockAutoRematch: true },
+                          { paths: pathsAll, blockAutoRematch: true },
                           {
                             onSuccess: () => refetch(),
                             onError: () => refetch(),

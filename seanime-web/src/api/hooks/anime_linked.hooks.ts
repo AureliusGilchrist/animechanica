@@ -8,6 +8,7 @@ export type LinkedAnimeListParams = {
   page?: number
   pageSize?: number
   hidden?: "include" | "exclude" | "only"
+  includeUnmatched?: boolean
 }
 
 export type LinkedLocalFile = Anime_LocalFile & {
@@ -31,6 +32,7 @@ const buildQueryString = (params?: LinkedAnimeListParams) => {
   if (params.page) p.set("page", String(params.page))
   if (params.pageSize) p.set("pageSize", String(params.pageSize))
   if (params.hidden) p.set("hidden", params.hidden)
+  if (params.includeUnmatched) p.set("includeUnmatched", "true")
   const s = p.toString()
   return s ? `?${s}` : ""
 }
