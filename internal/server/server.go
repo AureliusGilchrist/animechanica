@@ -44,7 +44,7 @@ func startApp(embeddedLogo []byte) (*core.App, core.SeanimeFlags, *updater.SelfU
 
 	log.Logger = *app.Logger
 	golog.SetOutput(app.Logger)
-	util.SetupLoggerSignalHandling(logFile)
+	util.SetupLoggerSignalHandling(logFile, app.Cleanup)
 	crashlog.GlobalCrashLogger.SetLogDir(app.Config.Logs.Dir)
 
 	app.OnFlushLogs = func() {

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"github.com/hekmon/transmissionrpc/v3"
 	"github.com/rs/zerolog"
+	"path/filepath"
+	"os"
 	"regexp"
 	"seanime/internal/api/metadata"
 	"seanime/internal/events"
@@ -445,6 +447,16 @@ func (r *Repository) AddMagnetsWithDirAndName(magnets []string, parentDir string
 	if len(magnets) == 0 {
 		r.logger.Debug().Msg("torrent client: No magnets to add")
 		return nil
+	}
+
+	// Create the destination folder immediately for visibility under the completed directory
+	if parentDir != "" && desiredRootName != "" {
+		absPath := filepath.Join(parentDir, desiredRootName)
+		if err := os.MkdirAll(absPath, 0o775); err != nil {
+			r.logger.Warn().Err(err).Str("path", absPath).Msg("torrent client: Could not pre-create destination folder")
+		} else {
+			r.logger.Debug().Str("path", absPath).Msg("torrent client: Pre-created destination folder")
+		}
 	}
 
 	var err error

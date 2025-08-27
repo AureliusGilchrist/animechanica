@@ -81,7 +81,7 @@ func WriteGlobalLogBufferToFile(file *os.File) {
 	logBuffer.Reset()
 }
 
-func SetupLoggerSignalHandling(file *os.File) {
+func SetupLoggerSignalHandling(file *os.File, onExit func()) {
 	if file == nil {
 		return
 	}
@@ -92,6 +92,14 @@ func SetupLoggerSignalHandling(file *os.File) {
 	go func() {
 		sig := <-sigChan
 		log.Trace().Msgf("Received signal: %s", sig)
+		// Run optional cleanup before flushing logs and exiting
+		if onExit != nil {
+			// Protect against panics in onExit
+			func() {
+				defer func() { _ = recover() }()
+				onExit()
+			}()
+		}
 		// Flush log buffer to the log file when the app exits
 		WriteGlobalLogBufferToFile(file)
 		_ = file.Close()

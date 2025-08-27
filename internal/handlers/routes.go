@@ -107,6 +107,27 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 
 	h := &Handler{App: app}
 
+	// Ensure background workers are stopped on shutdown
+	app.AddCleanupFunction(func() {
+		// Stop Nyaa crawler if running
+		crawlerManager.mutex.Lock()
+		defer crawlerManager.mutex.Unlock()
+		if crawlerManager.isRunning {
+			if crawlerManager.cmd != nil && crawlerManager.cmd.Process != nil {
+				_ = crawlerManager.cmd.Process.Kill()
+			}
+			crawlerManager.isRunning = false
+			if crawlerManager.status != nil {
+				crawlerManager.status.IsRunning = false
+				crawlerManager.status.LastActivity = time.Now()
+				crawlerManager.status.Logs = append(crawlerManager.status.Logs, "Crawler stopped during app shutdown")
+				if len(crawlerManager.status.Logs) > 100 {
+					crawlerManager.status.Logs = crawlerManager.status.Logs[len(crawlerManager.status.Logs)-100:]
+				}
+			}
+		}
+	})
+
 	e.GET("/events", h.webSocketEventHandler)
 
 	v1 := e.Group("/api").Group("/v1") // Commented out for now, will be used later

@@ -115,7 +115,9 @@ func (h *Handler) HandleStartNyaaCrawler(c echo.Context) error {
 	}
 
 	// Create config file for Python script
-	configPath := filepath.Join(h.App.Config.Data.AppDataDir, "nyaa_crawler_config.json")
+	// IMPORTANT: The Python crawler expects "config.json" in its working directory.
+	// We write that exact filename to ensure it picks up our settings (download path, queries, etc.).
+	configPath := filepath.Join(h.App.Config.Data.AppDataDir, "config.json")
 	configData := map[string]interface{}{
 		"qbittorrent": map[string]interface{}{
 			"url":      crawlerManager.config.QBittorrentURL,
