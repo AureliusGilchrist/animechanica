@@ -2,6 +2,7 @@ package manga
 
 import (
 	"bytes"
+	"container/heap"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -16,12 +17,164 @@ import (
 	manga_providers "seanime/internal/manga/providers"
 	"sort"
 
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
 )
+
+// --- Streamed popularity processing ---
+
+type popularityItem struct {
+	Entry      WeebCentralCatalogueEntry
+	Popularity int
+}
+
+// max heap for popularityItem
+type popMaxHeap []popularityItem
+
+func (h popMaxHeap) Len() int            { return len(h) }
+func (h popMaxHeap) Less(i, j int) bool  { return h[i].Popularity > h[j].Popularity }
+func (h popMaxHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
+func (h *popMaxHeap) Push(x interface{}) { *h = append(*h, x.(popularityItem)) }
+func (h *popMaxHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[:n-1]
+	return x
+}
+
+// processAllSeriesByPopularity computes popularity concurrently and processes highest available next.
+func (emd *EnMasseDownloader) processAllSeriesByPopularity(catalogue []WeebCentralCatalogueEntry) {
+	if len(catalogue) == 0 {
+		return
+	}
+
+	// Channel for scored results
+	resultsCh := make(chan popularityItem, 32)
+	doneCh := make(chan struct{})
+
+	// Producer: score entries concurrently
+	go func() {
+		defer close(doneCh)
+		workerLimit := 4
+		sem := make(chan struct{}, workerLimit)
+		wg := sync.WaitGroup{}
+		popCache := make(map[string]int)
+		mu := sync.Mutex{}
+
+		for _, e := range catalogue {
+			select {
+			case <-emd.stopCh:
+				// stop early
+				wg.Wait()
+				close(resultsCh)
+				return
+			default:
+			}
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(ent WeebCentralCatalogueEntry) {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				mu.Lock()
+				if v, ok := popCache[ent.Title]; ok {
+					mu.Unlock()
+					resultsCh <- popularityItem{Entry: ent, Popularity: v}
+					return
+				}
+				mu.Unlock()
+
+				p, err := emd.fetchPopularityForTitle(ent.Title)
+				if err != nil {
+					emd.logger.Debug().Err(err).Str("title", ent.Title).Msg("en_masse_downloader: Popularity fetch failed, defaulting to 0")
+				}
+				mu.Lock()
+				popCache[ent.Title] = p
+				mu.Unlock()
+				resultsCh <- popularityItem{Entry: ent, Popularity: p}
+			}(e)
+		}
+
+		wg.Wait()
+		close(resultsCh)
+	}()
+
+	// Consumer: pop highest available and process with warm-up buffering
+	h := &popMaxHeap{}
+	heap.Init(h)
+	processed := 0
+	total := len(catalogue)
+
+	for {
+		// If we are still in warm-up, do not process yet; keep filling the heap
+		emd.mu.RLock()
+		warmupActive := emd.warmupActive
+		warmupTarget := emd.warmupTarget
+		emd.mu.RUnlock()
+
+		if !warmupActive && h.Len() > 0 {
+			// Process next highest
+			item := heap.Pop(h).(popularityItem)
+			if err := emd.processSeries(item.Entry); err != nil {
+				select {
+				case <-emd.stopCh:
+					return
+				default:
+					emd.logger.Error().Err(err).Str("title", item.Entry.Title).Msg("en_masse_downloader: Failed to process series")
+				}
+			}
+			processed++
+			emd.mu.Lock()
+			emd.processedSeries++
+			emd.mu.Unlock()
+
+			if processed >= total {
+				return
+			}
+			continue
+		}
+
+		// Wait for more scored results or completion/stop
+		select {
+		case <-emd.stopCh:
+			return
+		case r, ok := <-resultsCh:
+			if !ok {
+				// producer finished; if still in warm-up but we have some items, end warm-up now
+				emd.mu.Lock()
+				if emd.warmupActive {
+					emd.warmupActive = false
+				}
+				emd.mu.Unlock()
+				// If heap is empty too, we are done
+				if h.Len() == 0 {
+					return
+				}
+				// Otherwise loop will process remaining
+				continue
+			}
+			// Push result and update warm-up counters/top candidate
+			heap.Push(h, r)
+			emd.mu.Lock()
+			if emd.warmupActive {
+				emd.warmupReady++
+				if h.Len() > 0 {
+					top := (*h)[0]
+					emd.warmupTopCandidate = top.Entry.Title
+				}
+				if emd.warmupReady >= warmupTarget {
+					emd.warmupActive = false
+				}
+			}
+			emd.mu.Unlock()
+		}
+	}
+}
 
 type (
 	// EnMasseDownloader handles bulk downloading of manga series from weebcentral catalogue
@@ -38,11 +191,24 @@ type (
 		mu        sync.RWMutex
 		stopCh    chan struct{}
 
+		// AniList rate limiting
+		anilistRateMu       sync.Mutex
+		anilistDebounce     time.Duration
+		lastAnilistHit      time.Time
+		anilistBackoff      time.Duration
+		anilistBackoffUntil time.Time
+
 		// Progress tracking
 		totalSeries     int
 		processedSeries int
 		currentSeries   string
 		startTime       time.Time
+
+		// Warm-up buffer (streamed popularity)
+		warmupActive       bool
+		warmupTarget       int
+		warmupReady        int
+		warmupTopCandidate string
 
 		// Skip tracking
 		skippedDownloaded int
@@ -53,6 +219,7 @@ type (
 		delayBetweenChapters time.Duration
 		delayBetweenSeries   time.Duration
 		progressFilePath     string
+		queueCapacityLimit   int
 	}
 
 	// WeebCentralCatalogueEntry represents a manga series in the weebcentral catalogue
@@ -72,6 +239,13 @@ type (
 		EstimatedTimeRemaining string    `json:"estimatedTimeRemaining"`
 		SkippedDownloaded      int       `json:"skippedDownloaded"`
 		SkippedQueued          int       `json:"skippedQueued"`
+
+		// Warm-up status (only relevant during streamed popularity warm-up phase)
+		WarmupActive       bool    `json:"warmupActive"`
+		WarmupTarget       int     `json:"warmupTarget"`
+		WarmupReady        int     `json:"warmupReady"`
+		WarmupPercent      float64 `json:"warmupPercent"`
+		WarmupTopCandidate string  `json:"warmupTopCandidate"`
 	}
 
 	// EnMasseDownloaderProgress represents the saved progress state
@@ -110,8 +284,10 @@ func NewEnMasseDownloader(opts *EnMasseDownloaderOptions) *EnMasseDownloader {
 		anilistClient:        opts.AnilistClient,
 		cataloguePath:        opts.CataloguePath,
 		progressFilePath:     progressFilePath,
-		delayBetweenChapters: 2 * time.Second,  // Increased from 100ms to 2s to reduce rate limiting
-		delayBetweenSeries:   10 * time.Second, // Increased from 3s to 10s to reduce rate limiting
+		delayBetweenChapters: 100 * time.Millisecond,
+		delayBetweenSeries:   3 * time.Second,
+		queueCapacityLimit:   2000,
+		anilistDebounce:      400 * time.Millisecond,
 		stopCh:               make(chan struct{}),
 	}
 }
@@ -198,6 +374,13 @@ func (emd *EnMasseDownloader) GetStatus() *EnMasseDownloaderStatus {
 	progress := float64(0)
 	if emd.totalSeries > 0 {
 		progress = float64(emd.processedSeries) / float64(emd.totalSeries) * 100
+		// Clamp to [0, 100] to avoid over-reporting like 800%
+		if progress < 0 {
+			progress = 0
+		}
+		if progress > 100 {
+			progress = 100
+		}
 	}
 
 	estimatedTimeRemaining := "Unknown"
@@ -206,6 +389,18 @@ func (emd *EnMasseDownloader) GetStatus() *EnMasseDownloaderStatus {
 		avgTimePerSeries := elapsed / time.Duration(emd.processedSeries)
 		remaining := time.Duration(emd.totalSeries-emd.processedSeries) * avgTimePerSeries
 		estimatedTimeRemaining = remaining.Round(time.Second).String()
+	}
+
+	// Warm-up percent calculation
+	warmupPercent := float64(0)
+	if emd.warmupActive && emd.warmupTarget > 0 {
+		warmupPercent = float64(emd.warmupReady) / float64(emd.warmupTarget)
+		if warmupPercent < 0 {
+			warmupPercent = 0
+		}
+		if warmupPercent > 1 {
+			warmupPercent = 1
+		}
 	}
 
 	return &EnMasseDownloaderStatus{
@@ -218,6 +413,11 @@ func (emd *EnMasseDownloader) GetStatus() *EnMasseDownloaderStatus {
 		EstimatedTimeRemaining: estimatedTimeRemaining,
 		SkippedDownloaded:      emd.skippedDownloaded,
 		SkippedQueued:          emd.skippedQueued,
+		WarmupActive:           emd.warmupActive,
+		WarmupTarget:           emd.warmupTarget,
+		WarmupReady:            emd.warmupReady,
+		WarmupPercent:          warmupPercent,
+		WarmupTopCandidate:     emd.warmupTopCandidate,
 	}
 }
 
@@ -287,17 +487,21 @@ func (emd *EnMasseDownloader) Start() error {
 	emd.downloader.RunChapterDownloadQueue()
 	emd.logger.Info().Msg("en_masse_downloader: Started manga download queue")
 
-	// Pre-filter and sort by popularity before processing
+	// Pre-filter entries
 	filtered, err := emd.filterOutAlreadyDownloaded(catalogueToProcess)
 	if err != nil {
 		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to filter already downloaded series, continuing without filtering")
 		filtered = catalogueToProcess
 	}
 
-	sorted := emd.sortByPopularityDescending(filtered)
-
-	// Start the download process in a goroutine
-	go emd.processAllSeries(sorted)
+	// Streamed-by-popularity with warm-up buffer of 500 results before starting
+	emd.mu.Lock()
+	emd.warmupActive = true
+	emd.warmupTarget = 500
+	emd.warmupReady = 0
+	emd.warmupTopCandidate = ""
+	emd.mu.Unlock()
+	go emd.processAllSeriesByPopularity(filtered)
 
 	return nil
 }
@@ -535,6 +739,11 @@ func (emd *EnMasseDownloader) processSeries(entry WeebCentralCatalogueEntry) err
 		case <-emd.stopCh:
 			return fmt.Errorf("process stopped")
 		default:
+			// Enforce a global queue capacity limit to prevent unbounded growth.
+			// Pause enqueuing new chapters while the queue size is >= limit.
+			if err := emd.waitForQueueCapacity(emd.queueCapacityLimit); err != nil {
+				return err
+			}
 			// Extract chapter title for logging
 			chapterTitle := chapter.Title
 			if strings.Contains(chapterTitle, " - ") {
@@ -852,6 +1061,56 @@ func (emd *EnMasseDownloader) sortByPopularityDescending(catalogue []WeebCentral
 }
 
 // fetchPopularityForTitle queries AniList GraphQL directly for a title and returns its popularity (top match)
+// waitForAniListWindow enforces a small debounce between AniList requests and honors a global backoff window.
+// It blocks until it's safe to perform the next request or the process is stopped.
+func (emd *EnMasseDownloader) waitForAniListWindow() error {
+	for {
+		// Stop if requested
+		select {
+		case <-emd.stopCh:
+			return fmt.Errorf("process stopped")
+		default:
+		}
+
+		now := time.Now()
+		emd.anilistRateMu.Lock()
+		// If currently backing off due to 429s, wait until the backoff window ends
+		if now.Before(emd.anilistBackoffUntil) {
+			wait := emd.anilistBackoffUntil.Sub(now)
+			emd.anilistRateMu.Unlock()
+			select {
+			case <-emd.stopCh:
+				return fmt.Errorf("process stopped")
+			case <-time.After(wait):
+				// Loop to re-check
+			}
+			continue
+		}
+
+		// Debounce: ensure minimum spacing between requests
+		var sleep time.Duration
+		if !emd.lastAnilistHit.IsZero() {
+			elapsed := now.Sub(emd.lastAnilistHit)
+			if elapsed < emd.anilistDebounce {
+				sleep = emd.anilistDebounce - elapsed
+			}
+		}
+		emd.anilistRateMu.Unlock()
+
+		if sleep > 0 {
+			select {
+			case <-emd.stopCh:
+				return fmt.Errorf("process stopped")
+			case <-time.After(sleep):
+			}
+			// Loop to re-check backoff/debounce
+			continue
+		}
+
+		return nil
+	}
+}
+
 func (emd *EnMasseDownloader) fetchPopularityForTitle(title string) (int, error) {
 	const endpoint = "https://graphql.anilist.co"
 	const query = `query ($page: Int, $perPage: Int, $search: String){
@@ -863,45 +1122,145 @@ func (emd *EnMasseDownloader) fetchPopularityForTitle(title string) (int, error)
   }
 }`
 
-	payload := anilistGraphQLRequest{
-		Query: query,
-		Variables: map[string]interface{}{
+	payload := map[string]interface{}{
+		"query": query,
+		"variables": map[string]interface{}{
 			"page":    1,
 			"perPage": 1,
 			"search":  title,
 		},
 	}
 
-	body, _ := json.Marshal(payload)
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("Content-Type", "application/json")
+	// Respect debounce/backoff and retry with exponential backoff on 429
+	maxRetries := 5
+	baseBackoff := 5 * time.Second
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if err := emd.waitForAniListWindow(); err != nil {
+			return 0, err
+		}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return 0, fmt.Errorf("anilist http status %d", resp.StatusCode)
+		body, _ := json.Marshal(payload)
+		req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+		if err != nil {
+			return 0, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{Timeout: 15 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return 0, err
+		}
+
+		// Update last hit timestamp on any response to maintain spacing
+		emd.anilistRateMu.Lock()
+		emd.lastAnilistHit = time.Now()
+		emd.anilistRateMu.Unlock()
+
+		if resp.StatusCode == http.StatusTooManyRequests { // 429
+			// Respect Retry-After header if present
+			retryAfter := resp.Header.Get("Retry-After")
+			_ = resp.Body.Close()
+			// Increase global backoff window
+			emd.anilistRateMu.Lock()
+			if retryAfter != "" {
+				if secs, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil {
+					emd.anilistBackoff = time.Duration(secs) * time.Second
+				} else {
+					// Fallback to exponential backoff
+					if emd.anilistBackoff == 0 {
+						emd.anilistBackoff = baseBackoff
+					} else {
+						emd.anilistBackoff *= 2
+						if emd.anilistBackoff > 60*time.Second {
+							emd.anilistBackoff = 60 * time.Second
+						}
+					}
+				}
+			} else {
+				if emd.anilistBackoff == 0 {
+					emd.anilistBackoff = baseBackoff
+				} else {
+					emd.anilistBackoff *= 2
+					if emd.anilistBackoff > 60*time.Second {
+						emd.anilistBackoff = 60 * time.Second
+					}
+				}
+			}
+			emd.anilistBackoffUntil = time.Now().Add(emd.anilistBackoff)
+			nextWait := emd.anilistBackoff
+			emd.anilistRateMu.Unlock()
+
+			emd.logger.Warn().Dur("backoff", nextWait).Int("attempt", attempt+1).Msg("en_masse_downloader: AniList rate limited (429), backing off")
+			// Loop will wait via waitForAniListWindow
+			continue
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return 0, fmt.Errorf("anilist http status %d", resp.StatusCode)
+		}
+
+		// Success; reset backoff
+		emd.anilistRateMu.Lock()
+		emd.anilistBackoff = 0
+		emd.anilistBackoffUntil = time.Time{}
+		emd.anilistRateMu.Unlock()
+
+		// Proceed to decode
+		var parsed anilistPopularityResponse
+		dec := json.NewDecoder(resp.Body)
+		if err := dec.Decode(&parsed); err != nil {
+			return 0, err
+		}
+		if len(parsed.Errors) > 0 {
+			return 0, fmt.Errorf("anilist error: %s", parsed.Errors[0].Message)
+		}
+		if len(parsed.Data.Page.Media) == 0 || parsed.Data.Page.Media[0].Popularity == nil {
+			return 0, nil
+		}
+		return *parsed.Data.Page.Media[0].Popularity, nil
 	}
 
-	var parsed anilistPopularityResponse
-	dec := json.NewDecoder(resp.Body)
-	if err := dec.Decode(&parsed); err != nil {
-		return 0, err
+	return 0, fmt.Errorf("anilist popularity: max retries exceeded after 429 backoff")
+}
+
+// waitForQueueCapacity blocks until the chapter download queue size is strictly below the given limit.
+// It polls the DB-backed queue length periodically and respects the stop channel.
+func (emd *EnMasseDownloader) waitForQueueCapacity(limit int) error {
+	for {
+		// Check for stop signal
+		select {
+		case <-emd.stopCh:
+			return fmt.Errorf("process stopped")
+		default:
+		}
+
+		// Get current queue size (all items in queue table are considered queued)
+		items, err := emd.database.GetChapterDownloadQueue()
+		if err != nil {
+			// On error, log and break to avoid deadlock; be conservative and allow progress.
+			emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to read queue size, continuing")
+			return nil
+		}
+
+		qlen := len(items)
+		if qlen < limit {
+			return nil
+		}
+
+		// Informative debug log at intervals
+		emd.logger.Debug().Int("queueLen", qlen).Int("limit", limit).Msg("en_masse_downloader: Queue at capacity, waiting...")
+
+		// Wait a bit before re-checking, but keep reacting to stopCh
+		select {
+		case <-emd.stopCh:
+			return fmt.Errorf("process stopped")
+		case <-time.After(3 * time.Second):
+		}
 	}
-	if len(parsed.Errors) > 0 {
-		return 0, fmt.Errorf("anilist error: %s", parsed.Errors[0].Message)
-	}
-	if len(parsed.Data.Page.Media) == 0 || parsed.Data.Page.Media[0].Popularity == nil {
-		return 0, nil
-	}
-	return *parsed.Data.Page.Media[0].Popularity, nil
 }
 
 // GetMangaCollection retrieves the manga collection (placeholder method)

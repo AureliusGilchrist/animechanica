@@ -74,7 +74,7 @@ type (
 		// GetMangaTitleFunc is a callback function to get manga title by media ID
 		// This avoids import cycles with the local package
 		GetMangaTitleFunc func(mediaId int) string
-		IsOffline      *bool
+		IsOffline         *bool
 	}
 
 	DownloadChapterOptions struct {
@@ -353,23 +353,23 @@ func (d *Downloader) GetMediaDownloads(mediaId int, cached bool) (ret MediaDownl
 }
 
 func (d *Downloader) RunChapterDownloadQueue() {
-    // Reset any items that were left in 'downloading' state (e.g., due to shutdown)
-    // so the queue can pick them up again as 'not_started'.
-    if err := d.database.ResetDownloadingChapterDownloadQueueItems(); err != nil {
-        d.logger.Warn().Err(err).Msg("manga downloader: Failed to reset 'downloading' queue items on start")
-    } else {
-        d.logger.Debug().Msg("manga downloader: Reset lingering 'downloading' queue items to 'not_started'")
-    }
+	// Reset any items that were left in 'downloading' state (e.g., due to shutdown)
+	// so the queue can pick them up again as 'not_started'.
+	if err := d.database.ResetDownloadingChapterDownloadQueueItems(); err != nil {
+		d.logger.Warn().Err(err).Msg("manga downloader: Failed to reset 'downloading' queue items on start")
+	} else {
+		d.logger.Debug().Msg("manga downloader: Reset lingering 'downloading' queue items to 'not_started'")
+	}
 
-    // Also reset any items that previously errored (e.g., due to cancellation mid-download)
-    // so that resuming will retry them automatically.
-    if err := d.database.ResetErroredChapterDownloadQueueItems(); err != nil {
-        d.logger.Warn().Err(err).Msg("manga downloader: Failed to reset 'errored' queue items on start")
-    } else {
-        d.logger.Debug().Msg("manga downloader: Reset lingering 'errored' queue items to 'not_started'")
-    }
+	// Also reset any items that previously errored (e.g., due to cancellation mid-download)
+	// so that resuming will retry them automatically.
+	if err := d.database.ResetErroredChapterDownloadQueueItems(); err != nil {
+		d.logger.Warn().Err(err).Msg("manga downloader: Failed to reset 'errored' queue items on start")
+	} else {
+		d.logger.Debug().Msg("manga downloader: Reset lingering 'errored' queue items to 'not_started'")
+	}
 
-    d.chapterDownloader.Run()
+	d.chapterDownloader.Run()
 }
 
 func (d *Downloader) StopChapterDownloadQueue() {
@@ -541,7 +541,7 @@ func (d *Downloader) hydrateMediaMap() {
 					// Try to extract metadata from registry.json if it exists
 					chapterPath := filepath.Join(seriesPath, chapterDir.Name())
 					registryPath := filepath.Join(chapterPath, "registry.json")
-					
+
 					// Parse chapter number from directory name (e.g., "1 - Chapter Title" -> "1")
 					chapterNumber := d.parseChapterNumberFromDirName(chapterDir.Name())
 					if chapterNumber == "" {
@@ -615,10 +615,10 @@ func (d *Downloader) extractMetadataFromRegistry(registryPath string) (int, stri
 	// any metadata that might help us identify the media ID and provider
 	// For now, we'll return default values since the new structure doesn't
 	// store this information in registry.json
-	
+
 	// TODO: We might need to store additional metadata in registry.json
 	// or find another way to map downloaded chapters back to their source
-	
+
 	// For backward compatibility, try to extract from directory structure
 	// if this is an old-format download that got moved
 	if strings.Contains(registryPath, "_") {
@@ -628,7 +628,7 @@ func (d *Downloader) extractMetadataFromRegistry(registryPath string) (int, stri
 			return id.MediaId, id.Provider, id.ChapterId
 		}
 	}
-	
+
 	// Return empty values - this means we can't map this chapter back to the MediaMap
 	// The MetadataScanner will handle these cases separately
 	return 0, "", ""
@@ -644,7 +644,7 @@ func (d *Downloader) getMangaTitleFromDatabase(mediaId int) string {
 			return d.sanitizeForFilesystem(title)
 		}
 	}
-	
+
 	d.logger.Debug().Int("mediaId", mediaId).Msg("manga downloader: Could not get manga title from callback, using fallback")
 	return ""
 }
@@ -654,23 +654,18 @@ func (d *Downloader) sanitizeForFilesystem(title string) string {
 	// Replace problematic characters with safe alternatives
 	sanitized := strings.ReplaceAll(title, "/", "-")
 	sanitized = strings.ReplaceAll(sanitized, "\\", "-")
-	sanitized = strings.ReplaceAll(sanitized, ":", "-")
 	sanitized = strings.ReplaceAll(sanitized, "*", "-")
-	sanitized = strings.ReplaceAll(sanitized, "?", "-")
 	sanitized = strings.ReplaceAll(sanitized, "\"", "-")
-	sanitized = strings.ReplaceAll(sanitized, "<", "-")
-	sanitized = strings.ReplaceAll(sanitized, ">", "-")
-	sanitized = strings.ReplaceAll(sanitized, "|", "-")
-	
+
 	// Trim whitespace and remove multiple consecutive dashes
 	sanitized = strings.TrimSpace(sanitized)
 	for strings.Contains(sanitized, "--") {
 		sanitized = strings.ReplaceAll(sanitized, "--", "-")
 	}
-	
+
 	// Remove leading/trailing dashes
 	sanitized = strings.Trim(sanitized, "-")
-	
+
 	return sanitized
 }
 

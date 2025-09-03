@@ -108,6 +108,25 @@ function MangaEnMasseDownloader() {
                     <CardContent className="space-y-4">
                         {status && (
                             <>
+                                {(status as any)?.warmupActive && (
+                                    <div className="space-y-2 p-3 rounded-md border border-amber-300 bg-amber-50">
+                                        <div className="flex justify-between text-sm">
+                                            <span>Preparing popularity (warm-up)</span>
+                                            <span>{Math.round(((status as any)?.warmupPercent ?? 0) * 100)}%</span>
+                                        </div>
+                                        <div className="w-full bg-amber-200 rounded-full h-2.5">
+                                            <div
+                                                className="bg-amber-500 h-2.5 rounded-full transition-all duration-300"
+                                                style={{ width: `${Math.round((((status as any)?.warmupPercent ?? 0) * 100))}%` }}
+                                            ></div>
+                                        </div>
+                                        {((status as any)?.warmupTopCandidate) && (
+                                            <div className="text-xs text-amber-900">
+                                                Top candidate so far: <span className="font-medium">{(status as any).warmupTopCandidate}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-sm">
                                         <span>Overall Progress</span>
