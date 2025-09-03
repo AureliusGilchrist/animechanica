@@ -252,9 +252,11 @@ class NyaaCrawler:
             s = re.sub(r"\[[^\]]*\]", " ", s)
             
             # Remove parenthetical segments but be more selective
-            # Keep main title parentheses but remove quality/season info
-            s = re.sub(r"\(Season\s*\d{1,2}[-\d]*\)", " ", s, flags=re.I)
+            # 1) Remove quality/format parentheticals like (BD 1080p), (WEB-DL), etc.
             s = re.sub(r"\([^)]*(?:BD|DVD|WEB|RIP|DL)[^)]*\)", " ", s, flags=re.I)
+            # 2) Remove duplicate English title in parentheses, e.g., "Title (English Title)"
+            #    Preserve any parentheses that contain season information or digits.
+            s = re.sub(r"\((?![^)]*(?:season|s\s*\d))[^)\d]*\)", " ", s, flags=re.I)
             
             # Remove curly braces segments
             s = re.sub(r"\{[^}]*\}", " ", s)
@@ -263,7 +265,8 @@ class NyaaCrawler:
             quality_tokens = [
                 r"\b(bluray|bd|uncensored|censored|hevc|x264|x265|10bit|8bit)\b",
                 r"\b(dual[- ]?audio|eng[- ]?subs?|multi[- ]?subs?)\b", 
-                r"\b(batch|season\s*\d{1,2}|s\d{1,2})\b",
+                # Keep season indicators; only remove 'batch'
+                r"\b(batch)\b",
                 r"\b(\d{3,4}p|720p|1080p|2160p|4k)\b",
                 r"\b(web[- ]?dl|web[- ]?rip|bdrip|dvdrip)\b"
             ]
@@ -501,7 +504,8 @@ def log_torrent_added(title, size, seeders):
     console.print(text)
 
 def main():
-    Search = ["[Judas] batch", "[DB] batch", "[EMBER] batch", "[smol] monogatari", "[Erai-raws] batch", "[SubsPlease] batch", "[HorribleSubs] batch", "[Trix] batch"]
+    Search = [  "[Judas] batch", "[DB] batch", "[EMBER] batch", "[smol] monogatari", "[Erai-raws] batch", "[SubsPlease] batch", "[HorribleSubs] batch", "[Trix] batch",
+                "[Judas] complete", "[DB] complete", "[EMBER] complete", "[Erai-raws] complete", "[SubsPlease] complete", "[HorribleSubs] complete", "[Trix] batcompletech"]
     
     for query in Search:
         logger.info(f"[cyan]Starting crawl with search query:[/cyan] {query}")

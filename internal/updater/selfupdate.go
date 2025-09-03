@@ -3,7 +3,6 @@ package updater
 import (
 	"fmt"
 	"github.com/rs/zerolog"
-	"github.com/samber/lo"
 	"github.com/samber/mo"
 	"io"
 	"os"
@@ -15,7 +14,6 @@ import (
 	"slices"
 	"strings"
 	"syscall"
-	"time"
 )
 
 const (
@@ -76,8 +74,9 @@ func (su *SelfUpdater) Started() <-chan struct{} {
 }
 
 func (su *SelfUpdater) StartSelfUpdate(fallbackDestination string) {
-	su.fallbackDest = fallbackDestination
-	close(su.breakLoopCh)
+    // Updates are disabled in this fork; do nothing.
+    su.fallbackDest = fallbackDestination
+    // Intentionally do NOT close breakLoopCh to avoid switching the server into update mode
 }
 
 // recover will just print a message and attempt to download the latest release
@@ -109,156 +108,9 @@ func getExePath() string {
 }
 
 func (su *SelfUpdater) Run() error {
-
-	exePath := getExePath()
-
-	su.originalExePath = mo.Some(exePath)
-
-	exeDir := filepath.Dir(exePath) // /path/to
-
-	var files []string
-
-	switch runtime.GOOS {
-	case "windows":
-		files = []string{
-			"seanime.exe",
-			"LICENSE",
-		}
-	default:
-		files = []string{
-			"seanime",
-			"LICENSE",
-		}
-	}
-
-	// Get the new assets
-	su.logger.Info().Msg("selfupdate: Fetching latest release info")
-
-	// Get the latest release
-	release, err := su.updater.GetLatestRelease()
-	if err != nil {
-		su.logger.Error().Err(err).Msg("selfupdate: Failed to get latest release")
-		return err
-	}
-
-	// Find the asset
-	assetName := su.updater.GetReleaseName(release.Version)
-	asset, ok := lo.Find(release.Assets, func(asset ReleaseAsset) bool {
-		return asset.Name == assetName
-	})
-	if !ok {
-		su.logger.Error().Msg("selfupdate: Asset not found")
-		return err
-	}
-
-	su.logger.Info().Msg("selfupdate: Downloading latest release")
-
-	// Download the asset to exeDir/seanime_tmp
-	newReleaseDir, err := su.updater.DownloadLatestReleaseN(asset.BrowserDownloadUrl, exeDir, tempReleaseDir)
-	if err != nil {
-		su.logger.Error().Err(err).Msg("selfupdate: Failed to download latest release")
-		return err
-	}
-
-	// DEVNOTE: Past this point, the application will be broken
-	// Use "recover" to attempt to recover the application
-
-	su.logger.Info().Msg("selfupdate: Creating backup")
-
-	// Delete the backup directory if it exists
-	_ = os.RemoveAll(filepath.Join(exeDir, backupDirName))
-	// Create the backup directory
-	backupDir := filepath.Join(exeDir, backupDirName)
-	_ = os.MkdirAll(backupDir, 0755)
-
-	// Backup the current assets
-	// Copy the files to the backup directory
-	// seanime.exe + /backup_restore_if_failed/seanime.exe
-	// LICENSE + /backup_restore_if_failed/LICENSE
-	for _, file := range files {
-		// We don't check for errors here because we don't want to stop the update process if LICENSE is not found for example
-		_ = copyFile(filepath.Join(exeDir, file), filepath.Join(backupDir, file))
-	}
-
-	su.logger.Info().Msg("selfupdate: Renaming assets")
-	time.Sleep(2 * time.Second)
-
-	renamingFailed := false
-	failedEntryNames := make([]string, 0)
-
-	// Rename the current assets
-	// seanime.exe -> seanime.exe.old
-	// LICENSE -> LICENSE.old
-	for _, file := range files {
-		err = os.Rename(filepath.Join(exeDir, file), filepath.Join(exeDir, file+".old"))
-		// We care about the error ONLY if the file is the executable
-		if err != nil && (file == "seanime" || file == "seanime.exe") {
-			renamingFailed = true
-			failedEntryNames = append(failedEntryNames, file)
-			//su.recover()
-			su.logger.Error().Err(err).Msg("selfupdate: Failed to rename entry")
-			//return err
-		}
-	}
-
-	if renamingFailed {
-		fmt.Println("---------------------------------")
-		fmt.Println("A second attempt will be made in 30 seconds")
-		fmt.Println("---------------------------------")
-		time.Sleep(30 * time.Second)
-		// Here `failedEntryNames` should only contain NECESSARY files that failed to rename
-		for _, entry := range failedEntryNames {
-			err = os.Rename(filepath.Join(exeDir, entry), filepath.Join(exeDir, entry+".old"))
-			if err != nil {
-				su.logger.Error().Err(err).Msg("selfupdate: Failed to rename entry")
-				su.recover(asset.BrowserDownloadUrl)
-				return err
-			}
-		}
-	}
-
-	// Now all the files have been renamed, we can move the new release to the exeDir
-
-	su.logger.Info().Msg("selfupdate: Moving assets")
-
-	// Move the new release elements to the exeDir
-	err = moveContents(newReleaseDir, exeDir)
-	if err != nil {
-		su.recover(asset.BrowserDownloadUrl)
-		su.logger.Error().Err(err).Msg("selfupdate: Failed to move assets")
-		return err
-	}
-
-	_ = os.Chmod(su.originalExePath.MustGet(), 0755)
-
-	// Delete the new release directory
-	_ = os.RemoveAll(newReleaseDir)
-
-	// Start the new executable
-	su.logger.Info().Msg("selfupdate: Starting new executable")
-
-	switch runtime.GOOS {
-	case "windows":
-		err = openWindows(su.originalExePath.MustGet())
-	case "darwin":
-		err = openMacOS(su.originalExePath.MustGet())
-	case "linux":
-		err = openLinux(su.originalExePath.MustGet())
-	default:
-		su.logger.Fatal().Msg("selfupdate: Unsupported platform")
-	}
-
-	// Remove .old files (will fail on Windows for executable)
-	// Remove seanime.exe.old and LICENSE.old
-	for _, file := range files {
-		_ = os.RemoveAll(filepath.Join(exeDir, file+".old"))
-	}
-
-	// Remove the backup directory
-	_ = os.RemoveAll(backupDir)
-
-	os.Exit(0)
-	return nil
+    // Updates are disabled in this fork; do nothing and return.
+    su.logger.Info().Msg("selfupdate: Run() called, but updates are disabled; skipping")
+    return nil
 }
 
 func openWindows(path string) error {

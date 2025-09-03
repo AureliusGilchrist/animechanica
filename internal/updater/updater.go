@@ -3,8 +3,6 @@ package updater
 import (
 	"net/http"
 	"seanime/internal/events"
-	"seanime/internal/util"
-	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -40,7 +38,8 @@ func New(currVersion string, logger *zerolog.Logger, wsEventManager events.WSEve
 	ret := &Updater{
 		CurrentVersion:      currVersion,
 		hasCheckedForUpdate: false,
-		checkForUpdate:      true,
+		// Disable update checks by default in this fork
+		checkForUpdate:      false,
 		logger:              logger,
 		client: &http.Client{
 			Timeout: time.Second * 10,
@@ -56,52 +55,12 @@ func New(currVersion string, logger *zerolog.Logger, wsEventManager events.WSEve
 }
 
 func (u *Updater) GetLatestUpdate() (*Update, error) {
-	if !u.checkForUpdate {
-		return nil, nil
-	}
-
-	rl, err := u.GetLatestRelease()
-	if err != nil {
-		return nil, err
-	}
-
-	if rl == nil || rl.TagName == "" {
-		return nil, nil
-	}
-
-	if !rl.Released {
-		return nil, nil
-	}
-
-	newV := strings.TrimPrefix(rl.TagName, "v")
-	updateTypeI, shouldUpdate := util.CompareVersion(u.CurrentVersion, newV)
-	if !shouldUpdate {
-		return nil, nil
-	}
-
-	updateType := ""
-	if updateTypeI == -1 {
-		updateType = MinorRelease
-	} else if updateTypeI == -2 {
-		updateType = PatchRelease
-	} else if updateTypeI == -3 {
-		updateType = MajorRelease
-	}
-
-	return &Update{
-		Release:        rl,
-		CurrentVersion: u.CurrentVersion,
-		Type:           updateType,
-	}, nil
+	// Updates are disabled in this fork; return an empty update
+	return &Update{Type: ""}, nil
 }
 
 func (u *Updater) ShouldRefetchReleases() {
-	u.hasCheckedForUpdate = false
-
-	if u.wsEventManager.IsPresent() {
-		// Tell the client to send a request to fetch the latest release
-		u.wsEventManager.MustGet().SendEvent(events.CheckForUpdates, nil)
-	}
+	// No-op when updates are disabled
 }
 
 func (u *Updater) SetEnabled(checkForUpdate bool) {
@@ -112,16 +71,6 @@ func (u *Updater) SetEnabled(checkForUpdate bool) {
 
 // GetLatestRelease returns the latest release from the GitHub repository.
 func (u *Updater) GetLatestRelease() (*Release, error) {
-	if u.hasCheckedForUpdate {
-		return u.LatestRelease, nil
-	}
-
-	release, err := u.fetchLatestRelease()
-	if err != nil {
-		return nil, err
-	}
-
-	u.hasCheckedForUpdate = true
-	u.LatestRelease = release
-	return release, nil
+	// Updates are disabled; never fetch releases
+	return nil, nil
 }

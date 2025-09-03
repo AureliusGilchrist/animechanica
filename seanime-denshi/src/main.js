@@ -7,8 +7,19 @@ let stripAnsi;
 import('strip-ansi').then(module => {
     stripAnsi = module.default;
 });
-const {autoUpdater} = require('electron-updater');
 const log = require('electron-log');
+// Disable updates in this fork: stub autoUpdater to no-op
+const DISABLE_UPDATES = true;
+const autoUpdater = DISABLE_UPDATES ? {
+    logger: log,
+    setFeedURL: () => {},
+    checkForUpdates: async () => ({}),
+    checkForUpdatesAndNotify: () => {},
+    quitAndInstall: () => {},
+    on: () => {},
+    autoDownload: false,
+    autoInstallOnAppQuit: false,
+} : require('electron-updater').autoUpdater;
 
 function setupChromiumFlags() {
     // Bypass CSP and security
@@ -179,12 +190,11 @@ if (process.env.UPDATES_URL) {
     updateConfig.url = process.env.UPDATES_URL;
 }
 
-// Configure the updater
+// Configure the updater (no-op if disabled)
 autoUpdater.setFeedURL(updateConfig);
-
-// Enable automatic download
-autoUpdater.autoDownload = true;
-autoUpdater.autoInstallOnAppQuit = true;
+// Explicitly keep downloads off when disabled
+autoUpdater.autoDownload = DISABLE_UPDATES ? false : true;
+autoUpdater.autoInstallOnAppQuit = DISABLE_UPDATES ? false : true;
 
 // App state
 let mainWindow = null;
