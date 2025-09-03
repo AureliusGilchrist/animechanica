@@ -26,6 +26,83 @@ type AnimeOfflineEntry struct {
 	Tags     []string `json:"tags"`
 }
 
+// folder index mapping persistence: assigns a stable 3-digit index per title
+type folderIndexMapping struct {
+	Next int            `json:"next"`
+	Map  map[string]int `json:"map"` // key: normalized title
+}
+
+func (h *Handler) getFolderIndexPath() string {
+	return filepath.Join("/aeternae/library/manga/seanime", "anime_batch_folder_index.json")
+}
+
+func (h *Handler) loadFolderIndex() (*folderIndexMapping, error) {
+	path := h.getFolderIndexPath()
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var m folderIndexMapping
+	if err := json.NewDecoder(f).Decode(&m); err != nil {
+		return nil, err
+	}
+	if m.Map == nil {
+		m.Map = make(map[string]int)
+	}
+	if m.Next <= 0 {
+		m.Next = 1
+	}
+	return &m, nil
+}
+
+func (h *Handler) saveFolderIndex(m *folderIndexMapping) {
+	path := h.getFolderIndexPath()
+	tmp := path + ".tmp"
+	if err := func() error {
+		f, err := os.Create(tmp)
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(f)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(m); err != nil {
+			_ = f.Close()
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
+		return os.Rename(tmp, path)
+	}(); err != nil {
+		fmt.Printf("[anime-batch] warning: failed saving folder index: %v\n", err)
+	}
+}
+
+func (h *Handler) getOrAssignFolderIndexForTitle(title string) int {
+	normalize := func(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+	key := normalize(title)
+	folderIndexMu.Lock()
+	defer folderIndexMu.Unlock()
+
+	// Load or initialize mapping
+	m, err := h.loadFolderIndex()
+	if err != nil || m == nil {
+		m = &folderIndexMapping{Next: 1, Map: make(map[string]int)}
+	}
+	if idx, ok := m.Map[key]; ok && idx > 0 {
+		return idx
+	}
+	// Assign next and increment
+	idx := m.Next
+	m.Map[key] = idx
+	// Advance Next to the next unused integer (defensive in case manual edits)
+	m.Next++
+	// Persist
+	h.saveFolderIndex(m)
+	return idx
+}
+
 // pickRomajiWithEnglishFallback returns a folder-friendly title using a temporary heuristic:
 // - Prefer the offline entry Title as Romaji
 // - Fallback to an English-looking synonym (ASCII, has vowels, often with common English words)
@@ -106,6 +183,9 @@ var (
 	activeJob   *BatchDownloadJob
 	activeJobMu sync.RWMutex
 )
+
+// Mutex for folder index mapping to ensure concurrent safety
+var folderIndexMu sync.Mutex
 
 // Helper functions for batch download management
 func (h *Handler) setActiveJob(job *BatchDownloadJob) {
@@ -244,11 +324,54 @@ func (h *Handler) processBatchDownload(job *BatchDownloadJob, animeList []AnimeO
 		h.emitJobUpdate(job)
 		// Clear the active job reference once finished or cancelled
 		h.clearActiveJob()
+		// If completed (not cancelled), clear persistent progress
+		job.mu.RLock()
+		done := job.Status == "completed"
+		job.mu.RUnlock()
+		if done {
+			h.clearAnimeBatchProgress()
+		}
 	}()
 
 	batchSize := job.Settings.MaxConcurrentBatches
 	if batchSize <= 0 {
 		batchSize = 3 // Default batch size
+	}
+
+	// Build progress model for persistence
+	progress := &animeBatchProgress{
+		ProcessedTitles: make(map[string]bool),
+		Total:           len(animeList),
+		StartTime:       job.StartTime,
+		Settings:        job.Settings,
+	}
+	// If an existing progress file matches settings, load and filter already-processed
+	if existing, err := h.loadAnimeBatchProgress(); err == nil {
+		// Compare minimal settings that affect selection; to keep it simple, require full equality via JSON
+		sameSettings := func(a, b AllAnimeDownloadSettings) bool {
+			aj, _ := json.Marshal(a)
+			bj, _ := json.Marshal(b)
+			return string(aj) == string(bj)
+		}
+		if sameSettings(existing.Settings, job.Settings) {
+			progress = existing
+			// Filter out processed titles
+			filtered := make([]AnimeOfflineEntry, 0, len(animeList))
+			for _, a := range animeList {
+				if !progress.ProcessedTitles[strings.ToLower(strings.TrimSpace(a.Title))] {
+					filtered = append(filtered, a)
+				}
+			}
+			animeList = filtered
+			// Update job counts to reflect remaining workload
+			job.mu.Lock()
+			job.TotalAnime = len(animeList)
+			job.CompletedAnime = 0
+			job.FailedAnime = 0
+			job.Progress = 0
+			job.mu.Unlock()
+			h.emitJobUpdate(job)
+		}
 	}
 
 	for i := 0; i < len(animeList); i += batchSize {
@@ -321,27 +444,17 @@ func (h *Handler) processAnime(job *BatchDownloadJob, anime AnimeOfflineEntry) {
 	}
 	job.mu.RUnlock()
 
-	// Ensure torrent client is running
-	if ok := h.App.TorrentClientRepository.Start(); !ok {
-		job.mu.Lock()
-		job.FailedAnime++
-		job.Errors = append(job.Errors, fmt.Sprintf("Torrent client not available for: %s", anime.Title))
-		job.Logs = append(job.Logs, DownloadLogEntry{
-			AnimeTitle: anime.Title,
-			Query:      "",
-			Status:     "failed",
-			Message:    "Torrent client not available",
-			Time:       time.Now(),
-		})
-		job.mu.Unlock()
+	// Ensure torrent client is running (wait with 30s retry if unavailable)
+	if !h.waitForTorrentClient(job, anime.Title) {
+		// Cancelled while waiting
 		return
 	}
 
 	// Build destination parent folder and desired torrent root name:
-    // Parent: /aeternae/theater/anime/completed
-    // Desired root: {ANIMENAME}
-    destRoot := filepath.Join("/aeternae/theater/anime/completed")
-    _ = os.MkdirAll(destRoot, 0o755)
+	// Parent: /aeternae/theater/anime/completed
+	// Desired root: {ANIMENAME}
+	destRoot := filepath.Join("/aeternae/theater/anime/completed")
+	_ = os.MkdirAll(destRoot, 0o755)
 	sanitize := func(s string) string {
 		s = strings.ReplaceAll(s, "/", "-")
 		s = strings.ReplaceAll(s, "\\", "-")
@@ -351,10 +464,13 @@ func (h *Handler) processAnime(job *BatchDownloadJob, anime AnimeOfflineEntry) {
 		}
 		return s
 	}
-    // Choose folder name using Romaji with fallback (temporary heuristic)
-    folderName := pickRomajiWithEnglishFallback(anime)
-    desiredRoot := sanitize(folderName)
-    // qBittorrent will create the root folder itself when RootFolder is true; we only ensure parent exists
+	// Choose folder name using Romaji with fallback (temporary heuristic)
+	folderName := pickRomajiWithEnglishFallback(anime)
+	sanitizedTitle := sanitize(folderName)
+	// Obtain a persistent 3-digit index for the title and prepend it
+	index := h.getOrAssignFolderIndexForTitle(sanitizedTitle)
+	desiredRoot := fmt.Sprintf("%03d - %s", index, sanitizedTitle)
+	// qBittorrent will create the root folder itself when RootFolder is true; we only ensure parent exists
 
 	// Construct search query with batch bias
 	parts := []string{anime.Title, "batch"}
@@ -384,14 +500,16 @@ func (h *Handler) processAnime(job *BatchDownloadJob, anime AnimeOfflineEntry) {
 			Time:       time.Now(),
 		})
 		job.mu.Unlock()
+		// Persist progress even on failure so we can resume exactly
+		h.markAnimeProcessed(anime.Title, job)
 		return
 	}
-    // Force parent dir and desired root folder name so the torrent is created at
-    // /aeternae/theater/anime/completed/{desiredRoot} and data is moved there like manual adds
-    if err := h.App.TorrentClientRepository.AddMagnetsWithDirAndName([]string{magnet}, destRoot, desiredRoot); err != nil {
-        job.mu.Lock()
-        job.FailedAnime++
-        job.Errors = append(job.Errors, fmt.Sprintf("Failed to add torrent for: %s (%v)", anime.Title, err))
+	// Force parent dir and desired root folder name so the torrent is created at
+	// /aeternae/theater/anime/completed/{desiredRoot} and data is moved there like manual adds
+	if err := h.App.TorrentClientRepository.AddMagnetsWithDirAndName([]string{magnet}, destRoot, desiredRoot); err != nil {
+		job.mu.Lock()
+		job.FailedAnime++
+		job.Errors = append(job.Errors, fmt.Sprintf("Failed to add torrent for: %s (%v)", anime.Title, err))
 		job.Logs = append(job.Logs, DownloadLogEntry{
 			AnimeTitle: anime.Title,
 			Query:      query,
@@ -400,6 +518,7 @@ func (h *Handler) processAnime(job *BatchDownloadJob, anime AnimeOfflineEntry) {
 			Time:       time.Now(),
 		})
 		job.mu.Unlock()
+		h.markAnimeProcessed(anime.Title, job)
 		return
 	}
 
@@ -430,6 +549,130 @@ func (h *Handler) processAnime(job *BatchDownloadJob, anime AnimeOfflineEntry) {
 	}
 	job.Statistics.QbittorrentActive = ac.Downloading + ac.Seeding + ac.Paused
 	job.mu.Unlock()
+	h.markAnimeProcessed(anime.Title, job)
+}
+
+// markAnimeProcessed adds the anime title to the persistent progress file
+func (h *Handler) markAnimeProcessed(title string, job *BatchDownloadJob) {
+	normalized := strings.ToLower(strings.TrimSpace(title))
+	// Load existing or create new progress
+	p, err := h.loadAnimeBatchProgress()
+	if err != nil || p == nil {
+		p = &animeBatchProgress{
+			ProcessedTitles: make(map[string]bool),
+			Total:           job.TotalAnime,
+			StartTime:       job.StartTime,
+			Settings:        job.Settings,
+		}
+	}
+	if p.ProcessedTitles == nil {
+		p.ProcessedTitles = make(map[string]bool)
+	}
+	p.ProcessedTitles[normalized] = true
+	// Keep Total as first known value if set
+	if p.Total == 0 {
+		p.Total = job.TotalAnime
+	}
+	h.saveAnimeBatchProgress(p)
+}
+
+// EnMasse progress persistence for resume across restarts
+type animeBatchProgress struct {
+	ProcessedTitles map[string]bool          `json:"processedTitles"`
+	Total           int                      `json:"total"`
+	StartTime       time.Time                `json:"startTime"`
+	LastUpdated     time.Time                `json:"lastUpdated"`
+	Settings        AllAnimeDownloadSettings `json:"settings"`
+}
+
+func (h *Handler) getAnimeBatchProgressPath() string {
+	// Co-locate with the anime offline DB
+	return filepath.Join("/aeternae/library/manga/seanime", "anime_batch_downloader_progress.json")
+}
+
+func (h *Handler) loadAnimeBatchProgress() (*animeBatchProgress, error) {
+	path := h.getAnimeBatchProgressPath()
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var p animeBatchProgress
+	if err := json.NewDecoder(f).Decode(&p); err != nil {
+		return nil, err
+	}
+	if p.ProcessedTitles == nil {
+		p.ProcessedTitles = make(map[string]bool)
+	}
+	return &p, nil
+}
+
+func (h *Handler) saveAnimeBatchProgress(p *animeBatchProgress) {
+	path := h.getAnimeBatchProgressPath()
+	p.LastUpdated = time.Now()
+	tmp := path + ".tmp"
+	// Best-effort; log via fmt.Printf since this handler doesn’t have a logger
+	if err := func() error {
+		f, err := os.Create(tmp)
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(f)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(p); err != nil {
+			_ = f.Close()
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
+		return os.Rename(tmp, path)
+	}(); err != nil {
+		fmt.Printf("[anime-batch] warning: failed saving progress: %v\n", err)
+	}
+}
+
+func (h *Handler) clearAnimeBatchProgress() {
+	path := h.getAnimeBatchProgressPath()
+	_ = os.Remove(path)
+}
+
+// waitForTorrentClient waits until the torrent client is available, checking every 30s.
+// Returns false if the job was cancelled while waiting.
+func (h *Handler) waitForTorrentClient(job *BatchDownloadJob, animeTitle string) bool {
+	for {
+		// Check cancellation
+		job.mu.RLock()
+		cancelled := job.Status == "cancelled"
+		job.mu.RUnlock()
+		if cancelled {
+			return false
+		}
+		if ok := h.App.TorrentClientRepository.Start(); ok {
+			// Update active count snapshot
+			var ac torrent_client.ActiveCount
+			h.App.TorrentClientRepository.GetActiveCount(&ac)
+			job.mu.Lock()
+			if job.Statistics == nil {
+				job.Statistics = &BatchDownloadStatistics{}
+			}
+			job.Statistics.QbittorrentActive = ac.Downloading + ac.Seeding + ac.Paused
+			job.mu.Unlock()
+			return true
+		}
+		// Log and emit status, then wait 30s
+		job.mu.Lock()
+		job.Logs = append(job.Logs, DownloadLogEntry{
+			AnimeTitle: animeTitle,
+			Query:      "",
+			Status:     "info",
+			Message:    "qBittorrent unavailable; retrying in 30s",
+			Time:       time.Now(),
+		})
+		job.mu.Unlock()
+		h.emitJobUpdate(job)
+		time.Sleep(30 * time.Second)
+	}
 }
 
 // emitJobUpdate emits a job update event (mock implementation)
@@ -576,6 +819,21 @@ func (h *Handler) HandleStartAllAnimeDownload(c echo.Context) error {
 
 	// Filter anime based on settings
 	filteredAnime := h.filterAnimeForDownload(animeList, settings)
+	// If there is existing progress with the same settings, filter out processed ones now too
+	if existing, err := h.loadAnimeBatchProgress(); err == nil {
+		// compare settings by JSON serialization for simplicity
+		aj, _ := json.Marshal(existing.Settings)
+		bj, _ := json.Marshal(settings)
+		if string(aj) == string(bj) && existing.ProcessedTitles != nil {
+			tmp := make([]AnimeOfflineEntry, 0, len(filteredAnime))
+			for _, a := range filteredAnime {
+				if !existing.ProcessedTitles[strings.ToLower(strings.TrimSpace(a.Title))] {
+					tmp = append(tmp, a)
+				}
+			}
+			filteredAnime = tmp
+		}
+	}
 	if len(filteredAnime) == 0 {
 		return h.RespondWithData(c, map[string]interface{}{
 			"success": false,

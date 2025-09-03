@@ -1,10 +1,12 @@
 package manga
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"seanime/internal/api/anilist"
@@ -12,6 +14,7 @@ import (
 	"seanime/internal/events"
 	hibikemanga "seanime/internal/extension/hibike/manga"
 	manga_providers "seanime/internal/manga/providers"
+	"sort"
 
 	"strings"
 	"sync"
@@ -103,8 +106,8 @@ func NewEnMasseDownloader(opts *EnMasseDownloaderOptions) *EnMasseDownloader {
 		wsEventManager:       opts.WSEventManager,
 		database:             opts.Database,
 		repository:           opts.Repository,
-		anilistClient:        opts.AnilistClient,
 		downloader:           opts.Downloader,
+		anilistClient:        opts.AnilistClient,
 		cataloguePath:        opts.CataloguePath,
 		progressFilePath:     progressFilePath,
 		delayBetweenChapters: 2 * time.Second,  // Increased from 100ms to 2s to reduce rate limiting
@@ -284,8 +287,17 @@ func (emd *EnMasseDownloader) Start() error {
 	emd.downloader.RunChapterDownloadQueue()
 	emd.logger.Info().Msg("en_masse_downloader: Started manga download queue")
 
+	// Pre-filter and sort by popularity before processing
+	filtered, err := emd.filterOutAlreadyDownloaded(catalogueToProcess)
+	if err != nil {
+		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to filter already downloaded series, continuing without filtering")
+		filtered = catalogueToProcess
+	}
+
+	sorted := emd.sortByPopularityDescending(filtered)
+
 	// Start the download process in a goroutine
-	go emd.processAllSeries(catalogueToProcess)
+	go emd.processAllSeries(sorted)
 
 	return nil
 }
@@ -713,6 +725,183 @@ func (emd *EnMasseDownloader) generateSyntheticMediaID(seriesID string) int {
 	syntheticID := int(hashValue%8999999) + 1000000
 
 	return syntheticID
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Popularity sorting and already-downloaded filtering
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// anilistGraphQLRequest represents a minimal GraphQL request payload
+type anilistGraphQLRequest struct {
+	Query     string                 `json:"query"`
+	Variables map[string]interface{} `json:"variables"`
+}
+
+// anilistPopularityResponse models just enough of AniList's response to read popularity
+type anilistPopularityResponse struct {
+	Data struct {
+		Page struct {
+			Media []struct {
+				ID         int  `json:"id"`
+				Popularity *int `json:"popularity"`
+			} `json:"media"`
+		} `json:"Page"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+// filterOutAlreadyDownloaded removes series whose synthetic media ID already exists in the downloaded list
+func (emd *EnMasseDownloader) filterOutAlreadyDownloaded(catalogue []WeebCentralCatalogueEntry) ([]WeebCentralCatalogueEntry, error) {
+	downloadedIDs := make(map[int]struct{})
+
+	if emd.downloader != nil {
+		if list, err := emd.downloader.GetDownloadedMangaList(); err == nil {
+			for _, item := range list {
+				downloadedIDs[item.MediaID] = struct{}{}
+			}
+		} else {
+			// Fallback to mediaMap if metadata scanner fails
+			if emd.downloader.mediaMap != nil {
+				for mID := range *emd.downloader.mediaMap {
+					downloadedIDs[mID] = struct{}{}
+				}
+			}
+			emd.logger.Warn().Err(err).Msg("en_masse_downloader: metadata scanner failed, using mediaMap fallback for downloaded filter")
+		}
+	}
+
+	if len(downloadedIDs) == 0 {
+		return catalogue, nil
+	}
+
+	ret := make([]WeebCentralCatalogueEntry, 0, len(catalogue))
+	for _, entry := range catalogue {
+		parts := strings.Split(entry.ID, "/")
+		if len(parts) >= 3 {
+			seriesID := parts[2]
+			syntheticID := emd.generateSyntheticMediaID(seriesID)
+			if _, exists := downloadedIDs[syntheticID]; exists {
+				emd.logger.Debug().Str("title", entry.Title).Int("mediaId", syntheticID).Msg("en_masse_downloader: Skipping already downloaded series")
+				continue
+			}
+		}
+		ret = append(ret, entry)
+	}
+	return ret, nil
+}
+
+// sortByPopularityDescending fetches popularity for each entry and returns a new slice sorted by popularity
+func (emd *EnMasseDownloader) sortByPopularityDescending(catalogue []WeebCentralCatalogueEntry) []WeebCentralCatalogueEntry {
+	if len(catalogue) == 0 {
+		return catalogue
+	}
+
+	type scored struct {
+		Entry      WeebCentralCatalogueEntry
+		Popularity int
+	}
+
+	results := make([]scored, len(catalogue))
+	popCache := make(map[string]int)
+	mu := sync.Mutex{}
+	workerLimit := 4
+	sem := make(chan struct{}, workerLimit)
+	wg := sync.WaitGroup{}
+
+	for i, entry := range catalogue {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, e WeebCentralCatalogueEntry) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			mu.Lock()
+			pop, ok := popCache[e.Title]
+			mu.Unlock()
+			if !ok {
+				p, err := emd.fetchPopularityForTitle(e.Title)
+				if err != nil {
+					emd.logger.Debug().Err(err).Str("title", e.Title).Msg("en_masse_downloader: Popularity fetch failed, defaulting to 0")
+				}
+				pop = p
+				mu.Lock()
+				popCache[e.Title] = pop
+				mu.Unlock()
+			}
+			results[i] = scored{Entry: e, Popularity: pop}
+		}(i, entry)
+	}
+	wg.Wait()
+
+	sort.SliceStable(results, func(i, j int) bool {
+		return results[i].Popularity > results[j].Popularity
+	})
+
+	sorted := make([]WeebCentralCatalogueEntry, 0, len(results))
+	for _, r := range results {
+		sorted = append(sorted, r.Entry)
+	}
+
+	if len(sorted) > 0 {
+		emd.logger.Info().Int("count", len(sorted)).Msg("en_masse_downloader: Sorted catalogue by popularity (desc)")
+	}
+
+	return sorted
+}
+
+// fetchPopularityForTitle queries AniList GraphQL directly for a title and returns its popularity (top match)
+func (emd *EnMasseDownloader) fetchPopularityForTitle(title string) (int, error) {
+	const endpoint = "https://graphql.anilist.co"
+	const query = `query ($page: Int, $perPage: Int, $search: String){
+  Page(page: $page, perPage: $perPage){
+    media(type: MANGA, search: $search, sort: [POPULARITY_DESC]){
+      id
+      popularity
+    }
+  }
+}`
+
+	payload := anilistGraphQLRequest{
+		Query: query,
+		Variables: map[string]interface{}{
+			"page":    1,
+			"perPage": 1,
+			"search":  title,
+		},
+	}
+
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, fmt.Errorf("anilist http status %d", resp.StatusCode)
+	}
+
+	var parsed anilistPopularityResponse
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(&parsed); err != nil {
+		return 0, err
+	}
+	if len(parsed.Errors) > 0 {
+		return 0, fmt.Errorf("anilist error: %s", parsed.Errors[0].Message)
+	}
+	if len(parsed.Data.Page.Media) == 0 || parsed.Data.Page.Media[0].Popularity == nil {
+		return 0, nil
+	}
+	return *parsed.Data.Page.Media[0].Popularity, nil
 }
 
 // GetMangaCollection retrieves the manga collection (placeholder method)
