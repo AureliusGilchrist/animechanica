@@ -423,24 +423,24 @@ func (emd *EnMasseDownloader) GetStatus() *EnMasseDownloaderStatus {
 
 // Start begins the en masse download process
 func (emd *EnMasseDownloader) Start() error {
+	// Quickly check running state without holding the lock for long operations
 	emd.mu.Lock()
-	defer emd.mu.Unlock()
-
 	if emd.isRunning {
+		emd.mu.Unlock()
 		return fmt.Errorf("en masse downloader is already running")
 	}
-
-	// Reset skip counters for a fresh run
+	// Reset skip counters for a fresh run (safe to do before long I/O)
 	emd.skippedDownloaded = 0
 	emd.skippedQueued = 0
+	emd.mu.Unlock()
 
-	// Load catalogue
+	// Load catalogue (slow I/O) outside of the lock
 	catalogue, err := emd.loadCatalogue()
 	if err != nil {
 		return fmt.Errorf("failed to load catalogue: %w", err)
 	}
 
-	// Load existing progress if available
+	// Load existing progress if available (slow I/O) outside of the lock
 	progress, err := emd.loadProgress()
 	if err != nil {
 		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to load progress, starting fresh")
@@ -449,33 +449,40 @@ func (emd *EnMasseDownloader) Start() error {
 
 	var catalogueToProcess []WeebCentralCatalogueEntry
 	var resuming bool
+	processedSeriesCount := 0
+	startTime := time.Now()
 
 	if progress != nil && len(progress.ProcessedSeriesIDs) > 0 {
 		// Resume from existing progress
 		catalogueToProcess = emd.filterUnprocessedSeries(catalogue, progress.ProcessedSeriesIDs)
-		emd.processedSeries = progress.ProcessedSeries
-		emd.startTime = progress.StartTime
+		processedSeriesCount = progress.ProcessedSeries
+		startTime = progress.StartTime
 		resuming = true
 		emd.logger.Info().
 			Int("totalSeries", len(catalogue)).
-			Int("processedSeries", emd.processedSeries).
+			Int("processedSeries", processedSeriesCount).
 			Int("remainingSeries", len(catalogueToProcess)).
-			Time("originalStartTime", emd.startTime).
+			Time("originalStartTime", startTime).
 			Msg("en_masse_downloader: Resuming bulk download process from saved progress")
 	} else {
 		// Start fresh
 		catalogueToProcess = catalogue
-		emd.processedSeries = 0
-		emd.startTime = time.Now()
+		processedSeriesCount = 0
+		startTime = time.Now()
 		resuming = false
 		emd.logger.Info().
 			Int("totalSeries", len(catalogue)).
 			Msg("en_masse_downloader: Starting fresh bulk download process")
 	}
 
+	// Now set shared state quickly under the lock
+	emd.mu.Lock()
 	emd.isRunning = true
 	emd.totalSeries = len(catalogue)
 	emd.stopCh = make(chan struct{})
+	emd.processedSeries = processedSeriesCount
+	emd.startTime = startTime
+	emd.mu.Unlock()
 
 	if resuming {
 		emd.wsEventManager.SendEvent(events.InfoToast, fmt.Sprintf("En Masse Downloader resumed - %d/%d series remaining", len(catalogueToProcess), emd.totalSeries))
@@ -487,7 +494,7 @@ func (emd *EnMasseDownloader) Start() error {
 	emd.downloader.RunChapterDownloadQueue()
 	emd.logger.Info().Msg("en_masse_downloader: Started manga download queue")
 
-	// Pre-filter entries
+	// Pre-filter entries (can be slow) outside of the lock
 	filtered, err := emd.filterOutAlreadyDownloaded(catalogueToProcess)
 	if err != nil {
 		emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to filter already downloaded series, continuing without filtering")

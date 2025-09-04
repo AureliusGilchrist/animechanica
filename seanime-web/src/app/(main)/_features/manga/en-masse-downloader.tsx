@@ -2,6 +2,7 @@
 
 import { useGetEnMasseDownloaderStatus, useStartEnMasseDownloader, useStopEnMasseDownloader } from "@/api/hooks/en_masse_downloader.hooks"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -47,16 +48,10 @@ function MangaEnMasseDownloader() {
         }
     }
 
-    const getStatusColor = () => {
-        if (isLoading) return "text-muted-foreground"
-        if (status?.isRunning) return "text-green-500"
-        return "text-muted-foreground"
-    }
-
-    const getStatusText = () => {
-        if (isLoading) return "Loading..."
-        if (status?.isRunning) return "Running"
-        return "Stopped"
+    const renderStatusBadge = () => {
+        if (isLoading) return <Badge intent="gray" size="sm">Loading…</Badge>
+        if (status?.isRunning) return <Badge intent="success" size="sm">Running</Badge>
+        return <Badge intent="gray" size="sm">Stopped</Badge>
     }
 
     return (
@@ -69,9 +64,7 @@ function MangaEnMasseDownloader() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <span className={`text-sm font-medium ${getStatusColor()}`}>
-                        {getStatusText()}
-                    </span>
+                    {renderStatusBadge()}
                     <div className="flex gap-2">
                         <Button
                             onClick={handleStart}
@@ -109,33 +102,40 @@ function MangaEnMasseDownloader() {
                         {status && (
                             <>
                                 {(status as any)?.warmupActive && (
-                                    <div className="space-y-2 p-3 rounded-md border border-amber-300 bg-amber-50">
-                                        <div className="flex justify-between text-sm">
-                                            <span>Preparing popularity (warm-up)</span>
-                                            <span>{Math.round(((status as any)?.warmupPercent ?? 0) * 100)}%</span>
+                                    <div className="space-y-2 p-3 rounded-md border border-blue-300 bg-blue-50 dark:bg-opacity-10">
+                                        <div className="flex items-center justify-between text-sm">
+                                            <div className="flex items-center gap-2">
+                                                <Badge intent="info" size="sm">Warm-up</Badge>
+                                                <span className="text-muted-foreground">Preparing popularity</span>
+                                            </div>
+                                            <span className="font-medium">{Math.round(((status as any)?.warmupPercent ?? 0) * 100)}%</span>
                                         </div>
-                                        <div className="w-full bg-amber-200 rounded-full h-2.5">
+                                        <div className="w-full bg-gray-200 rounded-full h-2.5">
                                             <div
-                                                className="bg-amber-500 h-2.5 rounded-full transition-all duration-300"
+                                                className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
                                                 style={{ width: `${Math.round((((status as any)?.warmupPercent ?? 0) * 100))}%` }}
-                                            ></div>
+                                            />
                                         </div>
                                         {((status as any)?.warmupTopCandidate) && (
-                                            <div className="text-xs text-amber-900">
+                                            <div className="text-xs text-blue-900 dark:text-blue-300">
                                                 Top candidate so far: <span className="font-medium">{(status as any).warmupTopCandidate}</span>
                                             </div>
                                         )}
+                                        <div className="text-xs text-blue-900 dark:text-blue-300">
+                                            {`Warm-up: ${((status as any)?.warmupReady ?? 0).toLocaleString()}/${((status as any)?.warmupTarget ?? 0).toLocaleString()} (${Math.round((((status as any)?.warmupPercent ?? 0) * 100))}%)`}
+                                            {((status as any)?.warmupTopCandidate) ? ` — Top: ${(status as any).warmupTopCandidate}` : ""}
+                                        </div>
                                     </div>
                                 )}
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-sm">
                                         <span>Overall Progress</span>
-                                        <span>{Math.round(status.progress * 100)}%</span>
+                                        <span>{Math.round(status.progress)}%</span>
                                     </div>
                                     <div className="w-full bg-gray-200 rounded-full h-2.5">
                                         <div 
                                             className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
-                                            style={{ width: `${status.progress * 100}%` }}
+                                            style={{ width: `${status.progress}%` }}
                                         ></div>
                                     </div>
                                 </div>
