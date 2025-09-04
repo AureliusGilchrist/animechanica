@@ -172,6 +172,10 @@ func (emd *EnMasseDownloader) processAllSeriesByPopularity(catalogue []WeebCentr
 				}
 			}
 			emd.mu.Unlock()
+			// Persist warm-up progress every 50 items to record batch progress
+			if emd.warmupActive && (emd.warmupReady%50 == 0) {
+				_ = emd.saveProgress(nil, "", "", "", 0)
+			}
 		}
 	}
 }
@@ -203,6 +207,9 @@ type (
 		processedSeries int
 		currentSeries   string
 		startTime       time.Time
+
+		// Resume support
+		resumeProgress *EnMasseDownloaderProgress
 
 		// Warm-up buffer (streamed popularity)
 		warmupActive       bool
@@ -255,6 +262,17 @@ type (
 		ProcessedSeries    int       `json:"processedSeries"`
 		StartTime          time.Time `json:"startTime"`
 		LastUpdated        time.Time `json:"lastUpdated"`
+
+		// Warm-up/batch tracking (500-item buffer batches)
+		WarmupActive bool `json:"warmupActive"`
+		WarmupTarget int  `json:"warmupTarget"`
+		WarmupReady  int  `json:"warmupReady"`
+
+		// In-flight series & chapter position
+		CurrentSeriesID    string `json:"currentSeriesId"`
+		CurrentSeriesTitle string `json:"currentSeriesTitle"`
+		CurrentChapterID   string `json:"currentChapterId"`
+		CurrentChapterIdx  int    `json:"currentChapterIdx"`
 	}
 
 	// EnMasseDownloaderOptions contains options for creating a new EnMasseDownloader
@@ -293,13 +311,29 @@ func NewEnMasseDownloader(opts *EnMasseDownloaderOptions) *EnMasseDownloader {
 }
 
 // saveProgress saves the current progress to a file
-func (emd *EnMasseDownloader) saveProgress(processedSeriesIDs []string) error {
+func (emd *EnMasseDownloader) saveProgress(processedSeriesIDs []string, currentSeriesID, currentSeriesTitle, currentChapterID string, currentChapterIdx int) error {
+	// If processedSeriesIDs is nil, preserve the existing list from disk
+	if processedSeriesIDs == nil {
+		if prev, err := emd.loadProgress(); err == nil && prev != nil {
+			processedSeriesIDs = prev.ProcessedSeriesIDs
+		} else {
+			processedSeriesIDs = []string{}
+		}
+	}
+
 	progress := &EnMasseDownloaderProgress{
 		ProcessedSeriesIDs: processedSeriesIDs,
 		TotalSeries:        emd.totalSeries,
 		ProcessedSeries:    emd.processedSeries,
 		StartTime:          emd.startTime,
 		LastUpdated:        time.Now(),
+		WarmupActive:       emd.warmupActive,
+		WarmupTarget:       emd.warmupTarget,
+		WarmupReady:        emd.warmupReady,
+		CurrentSeriesID:    currentSeriesID,
+		CurrentSeriesTitle: currentSeriesTitle,
+		CurrentChapterID:   currentChapterID,
+		CurrentChapterIdx:  currentChapterIdx,
 	}
 
 	data, err := json.MarshalIndent(progress, "", "  ")
@@ -458,6 +492,8 @@ func (emd *EnMasseDownloader) Start() error {
 		processedSeriesCount = progress.ProcessedSeries
 		startTime = progress.StartTime
 		resuming = true
+		// Keep loaded progress for in-series resume and warm-up
+		emd.resumeProgress = progress
 		emd.logger.Info().
 			Int("totalSeries", len(catalogue)).
 			Int("processedSeries", processedSeriesCount).
@@ -503,10 +539,22 @@ func (emd *EnMasseDownloader) Start() error {
 
 	// Streamed-by-popularity with warm-up buffer of 500 results before starting
 	emd.mu.Lock()
-	emd.warmupActive = true
-	emd.warmupTarget = 500
-	emd.warmupReady = 0
-	emd.warmupTopCandidate = ""
+	if emd.resumeProgress != nil {
+		// Restore warm-up counters if present, otherwise start fresh
+		emd.warmupActive = emd.resumeProgress.WarmupActive
+		if emd.resumeProgress.WarmupTarget > 0 {
+			emd.warmupTarget = emd.resumeProgress.WarmupTarget
+		} else {
+			emd.warmupTarget = 500
+		}
+		emd.warmupReady = emd.resumeProgress.WarmupReady
+		emd.warmupTopCandidate = ""
+	} else {
+		emd.warmupActive = true
+		emd.warmupTarget = 500
+		emd.warmupReady = 0
+		emd.warmupTopCandidate = ""
+	}
 	emd.mu.Unlock()
 	go emd.processAllSeriesByPopularity(filtered)
 
@@ -625,8 +673,8 @@ func (emd *EnMasseDownloader) processAllSeries(catalogue []WeebCentralCatalogueE
 			emd.processedSeries++
 			// Add this series to the processed list
 			processedSeriesIDs = append(processedSeriesIDs, entry.ID)
-			// Save progress after each series
-			if err := emd.saveProgress(processedSeriesIDs); err != nil {
+			// Save progress after each series (clear current chapter context)
+			if err := emd.saveProgress(processedSeriesIDs, "", "", "", -1); err != nil {
 				emd.logger.Warn().Err(err).Msg("en_masse_downloader: Failed to save progress")
 			}
 			emd.mu.Unlock()
@@ -682,18 +730,12 @@ func (emd *EnMasseDownloader) processSeries(entry WeebCentralCatalogueEntry) err
 	if len(searchResults) == 0 {
 		emd.logger.Warn().
 			Str("title", entry.Title).
-			Msg("en_masse_downloader: No search results found on weebcentral")
+			Msg("en_masse_downloader: No search results on weebcentral, skipping")
 		return nil
 	}
 
 	// Find the best match (first result for now, could be improved with fuzzy matching)
 	bestMatch := searchResults[0]
-
-	// Log cover image URL for debugging
-	emd.logger.Debug().
-		Str("title", entry.Title).
-		Str("coverImageUrl", bestMatch.Image).
-		Msg("en_masse_downloader: Found cover image URL from search results")
 
 	// Get chapters for the manga
 	chapters, err := provider.FindChapters(bestMatch.ID)
@@ -740,8 +782,37 @@ func (emd *EnMasseDownloader) processSeries(entry WeebCentralCatalogueEntry) err
 		Int("chapterCount", len(chapters)).
 		Msg("en_masse_downloader: Stored chapter container in filecache")
 
-	// Process each chapter in the series
-	for _, chapter := range chapters {
+	// Before processing chapters, persist the fact we are in this series
+	_ = emd.saveProgress(nil, entry.ID, entry.Title, "", -1)
+
+	// Determine resume point within this series if present
+	startIdx := 0
+	if emd.resumeProgress != nil && emd.resumeProgress.CurrentSeriesID == entry.ID {
+		if emd.resumeProgress.CurrentChapterID != "" && emd.resumeProgress.CurrentChapterIdx >= 0 {
+			// Prefer chapter ID match
+			found := -1
+			for i, ch := range chapters {
+				if ch.ID == emd.resumeProgress.CurrentChapterID {
+					found = i
+					break
+				}
+			}
+			if found >= 0 {
+				startIdx = found + 1 // continue with the next chapter after the saved one
+			} else {
+				// Fallback to saved index
+				if emd.resumeProgress.CurrentChapterIdx+1 < len(chapters) {
+					startIdx = emd.resumeProgress.CurrentChapterIdx + 1
+				} else {
+					startIdx = len(chapters)
+				}
+			}
+		}
+	}
+
+	// Process each chapter in the series (from resume point)
+	for idx := startIdx; idx < len(chapters); idx++ {
+		chapter := chapters[idx]
 		select {
 		case <-emd.stopCh:
 			return fmt.Errorf("process stopped")
@@ -792,13 +863,15 @@ func (emd *EnMasseDownloader) processSeries(entry WeebCentralCatalogueEntry) err
 				continue
 			}
 
+			// Persist in-flight chapter progress right before attempting to queue
+			_ = emd.saveProgress(nil, entry.ID, entry.Title, chapter.ID, idx)
+
 			// Use the exact same approach as the regular download handler with retry logic for rate limiting
 			emd.logger.Info().
 				Str("provider", "weebcentral").
 				Int("mediaId", mediaID).
 				Str("chapterId", chapter.ID).
 				Str("chapterTitle", chapterTitle).
-				Str("chapterTitle", chapter.Title).
 				Str("seriesTitle", entry.Title).
 				Msg("en_masse_downloader: About to call DownloadChapter")
 
@@ -857,6 +930,8 @@ func (emd *EnMasseDownloader) processSeries(entry WeebCentralCatalogueEntry) err
 				emd.logger.Info().
 					Str("chapterId", chapter.ID).
 					Msg("en_masse_downloader: Successfully queued chapter")
+				// Persist progress after successful queue as well
+				_ = emd.saveProgress(nil, entry.ID, entry.Title, chapter.ID, idx)
 			}
 			if err != nil {
 				emd.logger.Error().
@@ -871,11 +946,6 @@ func (emd *EnMasseDownloader) processSeries(entry WeebCentralCatalogueEntry) err
 			time.Sleep(2 * time.Second)
 		}
 	}
-
-	emd.logger.Info().
-		Str("title", entry.Title).
-		Int("queuedChapters", len(chapters)).
-		Msg("en_masse_downloader: Successfully queued all chapters")
 
 	return nil
 }

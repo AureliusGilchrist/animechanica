@@ -17,10 +17,12 @@ import (
 type (
 	// MetadataScanner scans downloaded manga directories and extracts metadata for UI display
 	MetadataScanner struct {
-		logger      *zerolog.Logger
-		downloadDir string
-		database    *db.Database
-		filecacher  *filecache.Cacher
+		logger           *zerolog.Logger
+		downloadDir      string
+		database         *db.Database
+		filecacher       *filecache.Cacher
+		backgroundWorker chan string // Channel for background enhancement jobs
+		workerRunning    bool
 	}
 
 	// DownloadedMangaSeries represents a downloaded manga series with metadata
@@ -55,10 +57,12 @@ type (
 // NewMetadataScanner creates a new metadata scanner
 func NewMetadataScanner(opts *MetadataScannerOptions) *MetadataScanner {
 	return &MetadataScanner{
-		logger:      opts.Logger,
-		downloadDir: opts.DownloadDir,
-		database:    opts.Database,
-		filecacher:  opts.Filecacher,
+		logger:           opts.Logger,
+		downloadDir:      opts.DownloadDir,
+		database:         opts.Database,
+		filecacher:       opts.Filecacher,
+		backgroundWorker: make(chan string, 100),
+		workerRunning:    false,
 	}
 }
 
@@ -103,6 +107,103 @@ func (ms *MetadataScanner) ScanDownloadedManga() ([]DownloadedMangaSeries, error
 
 	ms.logger.Debug().Int("count", len(series)).Msg("manga metadata scanner: Completed scanning")
 	return series, nil
+}
+
+// extractSeriesTitleFromRegistryFast extracts series title from first registry.json file only
+func (ms *MetadataScanner) extractSeriesTitleFromRegistryFast(seriesPath string) string {
+	// Only check first chapter directory for performance
+	chapterDirs, err := os.ReadDir(seriesPath)
+	if err != nil {
+		return ""
+	}
+
+	// Look at only the first chapter directory
+	for _, chapterDir := range chapterDirs {
+		if !chapterDir.IsDir() {
+			continue
+		}
+
+		registryPath := filepath.Join(seriesPath, chapterDir.Name(), "registry.json")
+		if _, err := os.Stat(registryPath); os.IsNotExist(err) {
+			continue
+		}
+
+		// Read and parse the registry file
+		data, err := os.ReadFile(registryPath)
+		if err != nil {
+			continue
+		}
+
+		// Try new format first
+		var newFormat struct {
+			DownloadMetadata struct {
+				SeriesTitle string `json:"seriesTitle"`
+			} `json:"download_metadata"`
+		}
+
+		if err := json.Unmarshal(data, &newFormat); err == nil && newFormat.DownloadMetadata.SeriesTitle != "" {
+			return newFormat.DownloadMetadata.SeriesTitle
+		}
+
+		// Quick old format check - only first entry
+		var oldFormat map[string]interface{}
+		if err := json.Unmarshal(data, &oldFormat); err == nil {
+			for _, value := range oldFormat {
+				if pageData, ok := value.(map[string]interface{}); ok {
+					if originalURL, exists := pageData["original_url"]; exists {
+						if urlStr, ok := originalURL.(string); ok {
+							return ms.extractSeriesTitleFromURL(urlStr)
+						}
+					}
+				}
+				break // Only check first entry
+			}
+		}
+		break // Only check first chapter
+	}
+
+	return ""
+}
+
+// extractMediaIdFromRegistryFast extracts media ID from first registry.json file only
+func (ms *MetadataScanner) extractMediaIdFromRegistryFast(seriesPath string) int {
+	// Only check first chapter directory for performance
+	chapterDirs, err := os.ReadDir(seriesPath)
+	if err != nil {
+		return 0
+	}
+
+	// Look at only the first chapter directory
+	for _, chapterDir := range chapterDirs {
+		if !chapterDir.IsDir() {
+			continue
+		}
+
+		registryPath := filepath.Join(seriesPath, chapterDir.Name(), "registry.json")
+		if _, err := os.Stat(registryPath); os.IsNotExist(err) {
+			continue
+		}
+
+		// Read and parse the registry file
+		data, err := os.ReadFile(registryPath)
+		if err != nil {
+			continue
+		}
+
+		// Try new format first
+		var newFormat struct {
+			DownloadMetadata struct {
+				MediaID int `json:"mediaId"`
+			} `json:"download_metadata"`
+		}
+
+		if err := json.Unmarshal(data, &newFormat); err == nil && newFormat.DownloadMetadata.MediaID != 0 {
+			return newFormat.DownloadMetadata.MediaID
+		}
+		break // Only check first chapter
+	}
+
+	return 0
 }
 
 // extractSeriesTitleFromRegistry attempts to extract the series title from registry.json files
@@ -227,89 +328,56 @@ func (ms *MetadataScanner) extractMediaIdFromRegistry(seriesPath string) int {
 	return 0
 }
 
-// scanSeries scans a single manga series directory
+// scanSeries scans a single manga series directory with ultra-fast indexing
 func (ms *MetadataScanner) scanSeries(seriesName, seriesPath string) (*DownloadedMangaSeries, error) {
-	// Read chapters in the series directory
+	// Ultra-fast indexing: only count directories, skip all file operations
 	chapterEntries, err := os.ReadDir(seriesPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read series directory: %w", err)
 	}
 
-	// Quick check: if no entries at all, skip this series
-	if len(chapterEntries) == 0 {
-		ms.logger.Debug().Str("series", seriesName).Msg("manga metadata scanner: Skipping empty series directory")
-		return nil, nil
-	}
-
-	var chapters []DownloadedMangaChapter
-	var coverImagePath string
+	// Quick count of chapter directories only
+	chapterCount := 0
 	var lastUpdated int64
-
-	// Process each chapter directory
-	for _, chapterEntry := range chapterEntries {
-		if !chapterEntry.IsDir() {
-			continue
-		}
-
-		chapterPath := filepath.Join(seriesPath, chapterEntry.Name())
-		chapterData, err := ms.scanChapter(chapterEntry.Name(), chapterPath)
-		if err != nil {
-			ms.logger.Warn().Err(err).Str("chapter", chapterEntry.Name()).Msg("manga metadata scanner: Failed to scan chapter")
-			continue
-		}
-
-		// Only include chapters that have actual content (pages)
-		if chapterData != nil && chapterData.PageCount > 0 {
-			chapters = append(chapters, *chapterData)
-
-			// Update last modified time
-			if chapterData.LastModified > lastUpdated {
-				lastUpdated = chapterData.LastModified
-			}
-
-			// Try to find a cover image from the first chapter if we don't have one yet
-			if coverImagePath == "" {
-				// Use the series directory so the finder can inspect all chapters
-				absoluteCoverPath := ms.findCoverImage(seriesPath)
-				if absoluteCoverPath != "" {
-					// Convert absolute path to relative path from download directory
-					if relPath, err := filepath.Rel(ms.downloadDir, absoluteCoverPath); err == nil {
-						coverImagePath = relPath
-						ms.logger.Debug().Str("coverPath", coverImagePath).Str("series", seriesName).Msg("manga metadata scanner: Found cover image")
-					}
+	for _, entry := range chapterEntries {
+		if entry.IsDir() {
+			chapterCount++
+			// Get modification time from directory entry (no extra stat calls)
+			if info, err := entry.Info(); err == nil {
+				if info.ModTime().Unix() > lastUpdated {
+					lastUpdated = info.ModTime().Unix()
 				}
 			}
 		}
 	}
 
-	// Skip series with no valid chapters (chapters must have content/pages)
-	if len(chapters) == 0 {
-		ms.logger.Debug().Str("series", seriesName).Msg("manga metadata scanner: Skipping series with no valid chapters")
+	// Skip series with no chapters
+	if chapterCount == 0 {
 		return nil, nil
 	}
 
-	// Try to extract the actual series title from registry files
-	actualSeriesTitle := ms.extractSeriesTitleFromRegistry(seriesPath)
+	// Fast metadata extraction - only check first registry file
+	actualSeriesTitle := ms.extractSeriesTitleFromRegistryFast(seriesPath)
 	if actualSeriesTitle == "" {
-		// Fallback to directory name if we can't extract from registry
 		actualSeriesTitle = seriesName
 	}
 
-	// Try to extract the media ID from registry files
-	mediaId := ms.extractMediaIdFromRegistry(seriesPath)
+	// Fast media ID extraction - only check first registry file
+	mediaId := ms.extractMediaIdFromRegistryFast(seriesPath)
 
+	// Return minimal series data for ultra-fast indexing
 	return &DownloadedMangaSeries{
 		SeriesTitle:    actualSeriesTitle,
 		SeriesPath:     seriesPath,
 		MediaID:        mediaId,
-		CoverImagePath: coverImagePath,
-		ChapterCount:   len(chapters),
-		Chapters:       chapters,
+		CoverImagePath: "", // Skip cover images for fast indexing
+		ChapterCount:   chapterCount,
+		Chapters:       []DownloadedMangaChapter{}, // Empty chapters for fast indexing
 		LastUpdated:    time.Now().Unix(),
 	}, nil
 }
 
-// scanChapter scans a single chapter directory
+// scanChapter scans a single chapter directory (DEPRECATED - use optimized version in scanSeries)
 func (ms *MetadataScanner) scanChapter(chapterName, chapterPath string) (*DownloadedMangaChapter, error) {
 	// Get chapter info
 	info, err := os.Stat(chapterPath)
@@ -320,12 +388,8 @@ func (ms *MetadataScanner) scanChapter(chapterName, chapterPath string) (*Downlo
 	// Parse chapter number and title from directory name
 	chapterNumber, chapterTitle := ms.parseChapterName(chapterName)
 
-	// Count pages in the chapter
-	pageCount, err := ms.countPages(chapterPath)
-	if err != nil {
-		ms.logger.Warn().Err(err).Str("chapter", chapterName).Msg("manga metadata scanner: Failed to count pages")
-		pageCount = 0
-	}
+	// Skip expensive page counting for performance
+	pageCount := 1 // Assume at least 1 page if directory exists
 
 	return &DownloadedMangaChapter{
 		ChapterNumber: chapterNumber,
@@ -374,114 +438,65 @@ func (ms *MetadataScanner) countPages(chapterPath string) (int, error) {
 	return count, nil
 }
 
-// findCoverImage finds a proper cover image for a series
-// Priority: registry cover URL > dedicated cover files > first page fallback
-func (ms *MetadataScanner) findCoverImage(seriesDir string) string {
-	// First, try to get cover image URL from registry.json files
-	coverImageUrl := ms.extractCoverImageFromRegistry(seriesDir)
-	if coverImageUrl != "" {
-		ms.logger.Info().Str("coverImageUrl", coverImageUrl).Msg("metadata_scanner: Found cover image URL from registry metadata")
-		return coverImageUrl
+// findCoverImage searches for a cover image in the series directory
+func (ms *MetadataScanner) findCoverImage(seriesPath string) string {
+	// Look for common cover image patterns in the series directory
+	patterns := []string{
+		"cover.*",
+		"folder.*",
+		"poster.*",
+		"thumb.*",
 	}
 
-	// Fallback to scanning chapter files if no cover URL found in registry
-	ms.logger.Debug().Str("seriesDir", seriesDir).Msg("metadata_scanner: No cover URL in registry, scanning chapter files")
-	return ms.findCoverImageInChapterFiles(seriesDir)
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(filepath.Join(seriesPath, "**", pattern))
+		if err != nil {
+			continue
+		}
+		for _, match := range matches {
+			// Check if it's an image file
+			ext := strings.ToLower(filepath.Ext(match))
+			if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp" {
+				return match
+			}
+		}
+	}
+
+	return ""
+}
+
+// findCoverImageFast performs a quick cover image search in a single directory
+func (ms *MetadataScanner) findCoverImageFast(chapterPath string) string {
+	// Only check the first few files in the chapter directory for performance
+	entries, err := os.ReadDir(chapterPath)
+	if err != nil {
+		return ""
+	}
+
+	// Look for the first image file (likely to be cover/first page)
+	for i, entry := range entries {
+		if i >= 3 { // Only check first 3 files for speed
+			break
+		}
+		if entry.IsDir() {
+			continue
+		}
+
+		// Check if it's an image file
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp" {
+			return filepath.Join(chapterPath, entry.Name())
+		}
+	}
+
+	return ""
 }
 
 // findCoverImageInChapterFiles finds a proper cover image by scanning chapter files
 // Prioritizes dedicated cover files, falls back to first page if needed
 func (ms *MetadataScanner) findCoverImageInChapterFiles(seriesDir string) string {
-	// Get all chapter directories in the series
-	chapterDirs, err := os.ReadDir(seriesDir)
-	if err != nil {
-		ms.logger.Error().Err(err).Str("seriesDir", seriesDir).Msg("metadata_scanner: Failed to read series directory")
-		return ""
-	}
-
-	// Look through all chapter directories for cover images
-	for _, chapterDir := range chapterDirs {
-		if !chapterDir.IsDir() {
-			continue
-		}
-
-		chapterPath := filepath.Join(seriesDir, chapterDir.Name())
-
-		// Check for registry.json first to see if this is a valid chapter
-		registryPath := filepath.Join(chapterPath, "registry.json")
-		if _, err := os.Stat(registryPath); os.IsNotExist(err) {
-			ms.logger.Debug().Str("chapterPath", chapterPath).Msg("metadata_scanner: No registry.json found, skipping")
-			continue
-		}
-
-		entries, err := os.ReadDir(chapterPath)
-		if err != nil {
-			ms.logger.Error().Err(err).Str("chapterPath", chapterPath).Msg("metadata_scanner: Failed to read chapter directory")
-			continue
-		}
-
-		var coverCandidates []string
-		var imageFiles []string
-
-		// Look for both cover files and collect all images
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-
-			// Skip registry.json
-			if entry.Name() == "registry.json" {
-				continue
-			}
-
-			// Check if it's an image file
-			ext := strings.ToLower(filepath.Ext(entry.Name()))
-			if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp" {
-				fileName := strings.ToLower(entry.Name())
-				fileNameWithoutExt := strings.ToLower(strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name())))
-				imageFiles = append(imageFiles, entry.Name())
-
-				// Look for files that are specifically cover images
-				if strings.Contains(fileName, "cover") ||
-					strings.Contains(fileName, "thumbnail") ||
-					fileNameWithoutExt == "cover" ||
-					fileNameWithoutExt == "thumbnail" ||
-					fileNameWithoutExt == "front" ||
-					fileNameWithoutExt == "poster" ||
-					strings.HasPrefix(fileName, "00") ||
-					strings.HasPrefix(fileName, "01") { // Include first numbered file as potential cover
-					coverCandidates = append(coverCandidates, entry.Name())
-					ms.logger.Debug().Str("coverFile", entry.Name()).Str("chapterPath", chapterPath).Msg("manga metadata scanner: Found potential cover file")
-				}
-			}
-		}
-
-		// Return the best cover candidate (prioritize "cover" in name)
-		if len(coverCandidates) > 0 {
-			// First priority: files with "cover" in the name
-			for _, candidate := range coverCandidates {
-				if strings.Contains(strings.ToLower(candidate), "cover") {
-					ms.logger.Debug().Str("selectedCover", candidate).Str("chapterPath", chapterPath).Msg("manga metadata scanner: Selected cover file")
-					return filepath.Join(chapterPath, candidate)
-				}
-			}
-			// Second priority: any other cover candidate
-			ms.logger.Debug().Str("selectedCover", coverCandidates[0]).Str("chapterPath", chapterPath).Msg("manga metadata scanner: Selected first cover candidate")
-			return filepath.Join(chapterPath, coverCandidates[0])
-		}
-
-		// Fallback: use first image file if no dedicated cover found
-		if len(imageFiles) > 0 {
-			ms.logger.Debug().Str("fallbackCover", imageFiles[0]).Str("chapterPath", chapterPath).Msg("manga metadata scanner: Using first image as cover fallback")
-			return filepath.Join(chapterPath, imageFiles[0])
-		}
-
-		// No images found at all
-		ms.logger.Debug().Str("chapterPath", chapterPath).Msg("manga metadata scanner: No images found for cover")
-		return ""
-	}
-
-	// No cover found in any chapter
+	// Skip cover image scanning entirely for performance with 10k+ series
+	// This is too expensive for large collections
 	return ""
 }
 
@@ -598,7 +613,7 @@ func (ms *MetadataScanner) performFullScan(bucket filecache.PermanentBucket, cac
 	return series, nil
 }
 
-// performIncrementalUpdate checks for changes and updates only modified series
+// performIncrementalUpdate checks for changes and updates only modified series with concurrent processing
 func (ms *MetadataScanner) performIncrementalUpdate(cachedSeries []DownloadedMangaSeries) ([]DownloadedMangaSeries, error) {
 	// Create a map of cached series for quick lookup
 	cachedMap := make(map[string]*DownloadedMangaSeries)
@@ -622,7 +637,21 @@ func (ms *MetadataScanner) performIncrementalUpdate(cachedSeries []DownloadedMan
 	updatedCount := 0
 	addedCount := 0
 
-	// Process each directory
+	// Use concurrent processing for large collections
+	type scanJob struct {
+		entry      os.DirEntry
+		seriesPath string
+		isUpdate   bool
+	}
+
+	type scanResult struct {
+		series   *DownloadedMangaSeries
+		err      error
+		isUpdate bool
+	}
+
+	// Collect scan jobs
+	var jobs []scanJob
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -637,38 +666,80 @@ func (ms *MetadataScanner) performIncrementalUpdate(cachedSeries []DownloadedMan
 			stat, err := os.Stat(seriesPath)
 			if err != nil {
 				ms.logger.Warn().Err(err).Str("series", entry.Name()).Msg("manga metadata scanner: Failed to stat series directory")
+				// Keep cached version
+				updatedSeries = append(updatedSeries, *cached)
 				continue
 			}
 
 			// If directory was modified after last cache update, rescan this series
 			if stat.ModTime().Unix() > cached.LastUpdated {
-				ms.logger.Debug().Str("series", entry.Name()).Msg("manga metadata scanner: Series modified, updating")
-				seriesData, err := ms.scanSeries(entry.Name(), seriesPath)
-				if err != nil {
-					ms.logger.Warn().Err(err).Str("series", entry.Name()).Msg("manga metadata scanner: Failed to rescan series")
-					// Keep the cached version if rescan fails
-					updatedSeries = append(updatedSeries, *cached)
-					continue
-				}
-				if seriesData != nil {
-					updatedSeries = append(updatedSeries, *seriesData)
-					updatedCount++
-				}
+				jobs = append(jobs, scanJob{entry: entry, seriesPath: seriesPath, isUpdate: true})
 			} else {
 				// No changes, keep cached version
 				updatedSeries = append(updatedSeries, *cached)
 			}
 		} else {
 			// New series, scan it
-			ms.logger.Debug().Str("series", entry.Name()).Msg("manga metadata scanner: New series found, scanning")
-			seriesData, err := ms.scanSeries(entry.Name(), seriesPath)
+			jobs = append(jobs, scanJob{entry: entry, seriesPath: seriesPath, isUpdate: false})
+		}
+	}
+
+	// Process scan jobs concurrently if there are many
+	if len(jobs) > 10 {
+		ms.logger.Info().Int("jobs", len(jobs)).Msg("manga metadata scanner: Processing series concurrently")
+
+		// Use worker pool for concurrent processing
+		numWorkers := 8 // Limit concurrent workers to avoid overwhelming filesystem
+		jobCh := make(chan scanJob, len(jobs))
+		resultCh := make(chan scanResult, len(jobs))
+
+		// Start workers
+		for i := 0; i < numWorkers; i++ {
+			go func() {
+				for job := range jobCh {
+					seriesData, err := ms.scanSeries(job.entry.Name(), job.seriesPath)
+					resultCh <- scanResult{series: seriesData, err: err, isUpdate: job.isUpdate}
+				}
+			}()
+		}
+
+		// Send jobs
+		for _, job := range jobs {
+			jobCh <- job
+		}
+		close(jobCh)
+
+		// Collect results
+		for i := 0; i < len(jobs); i++ {
+			result := <-resultCh
+			if result.err != nil {
+				ms.logger.Warn().Err(result.err).Msg("manga metadata scanner: Failed to scan series")
+				continue
+			}
+			if result.series != nil {
+				updatedSeries = append(updatedSeries, *result.series)
+				if result.isUpdate {
+					updatedCount++
+				} else {
+					addedCount++
+				}
+			}
+		}
+	} else {
+		// Process sequentially for small numbers
+		for _, job := range jobs {
+			seriesData, err := ms.scanSeries(job.entry.Name(), job.seriesPath)
 			if err != nil {
-				ms.logger.Warn().Err(err).Str("series", entry.Name()).Msg("manga metadata scanner: Failed to scan new series")
+				ms.logger.Warn().Err(err).Str("series", job.entry.Name()).Msg("manga metadata scanner: Failed to scan series")
 				continue
 			}
 			if seriesData != nil {
 				updatedSeries = append(updatedSeries, *seriesData)
-				addedCount++
+				if job.isUpdate {
+					updatedCount++
+				} else {
+					addedCount++
+				}
 			}
 		}
 	}
@@ -829,4 +900,151 @@ func (ms *MetadataScanner) generateSyntheticID(seriesTitle string) int {
 	syntheticID := int(hashValue%8999999) + 1000000
 
 	return syntheticID
+}
+
+// StartBackgroundWorker starts the background metadata enhancement worker
+func (ms *MetadataScanner) StartBackgroundWorker() {
+	if ms.workerRunning {
+		return
+	}
+
+	ms.workerRunning = true
+	go ms.backgroundEnhancementWorker()
+	ms.logger.Info().Msg("manga metadata scanner: Background enhancement worker started")
+}
+
+// StopBackgroundWorker stops the background metadata enhancement worker
+func (ms *MetadataScanner) StopBackgroundWorker() {
+	if !ms.workerRunning {
+		return
+	}
+
+	close(ms.backgroundWorker)
+	ms.workerRunning = false
+	ms.logger.Info().Msg("manga metadata scanner: Background enhancement worker stopped")
+}
+
+// backgroundEnhancementWorker runs in the background to enhance metadata progressively
+func (ms *MetadataScanner) backgroundEnhancementWorker() {
+	defer func() {
+		ms.workerRunning = false
+	}()
+
+	for seriesPath := range ms.backgroundWorker {
+		ms.enhanceSeriesMetadata(seriesPath)
+		// Small delay to avoid overwhelming the filesystem
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// enhanceSeriesMetadata enhances metadata for a specific series with full details
+func (ms *MetadataScanner) enhanceSeriesMetadata(seriesPath string) {
+	ms.logger.Debug().Str("seriesPath", seriesPath).Msg("manga metadata scanner: Enhancing series metadata")
+
+	// Get series name from path
+	seriesName := filepath.Base(seriesPath)
+
+	// Perform full metadata scan with cover images and detailed chapter info
+	enhancedSeries, err := ms.scanSeriesWithFullDetails(seriesName, seriesPath)
+	if err != nil {
+		ms.logger.Warn().Err(err).Str("series", seriesName).Msg("manga metadata scanner: Failed to enhance series metadata")
+		return
+	}
+
+	if enhancedSeries == nil {
+		return
+	}
+
+	// Update cache with enhanced metadata
+	cacheKey := "downloaded_manga_series"
+	bucket := filecache.NewPermanentBucket("manga_downloaded_series")
+
+	// Get current cached series
+	var cachedSeries []DownloadedMangaSeries
+	if _, err := ms.filecacher.GetPerm(bucket, cacheKey, &cachedSeries); err == nil {
+		// Find and update the specific series
+		for i, series := range cachedSeries {
+			if series.SeriesPath == seriesPath {
+				cachedSeries[i] = *enhancedSeries
+				break
+			}
+		}
+
+		// Save updated cache
+		ms.filecacher.SetPerm(bucket, cacheKey, cachedSeries)
+		ms.logger.Debug().Str("series", seriesName).Msg("manga metadata scanner: Enhanced metadata cached")
+	}
+}
+
+// scanSeriesWithFullDetails performs a full metadata scan including cover images and detailed chapters
+func (ms *MetadataScanner) scanSeriesWithFullDetails(seriesName, seriesPath string) (*DownloadedMangaSeries, error) {
+	// Full scan with all details
+	chapterEntries, err := os.ReadDir(seriesPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read series directory: %w", err)
+	}
+
+	var chapters []DownloadedMangaChapter
+	var lastUpdated int64
+
+	// Scan all chapters with full details
+	for _, entry := range chapterEntries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		chapterPath := filepath.Join(seriesPath, entry.Name())
+		chapter, err := ms.scanChapter(entry.Name(), chapterPath)
+		if err != nil {
+			ms.logger.Warn().Err(err).Str("chapter", entry.Name()).Msg("manga metadata scanner: Failed to scan chapter")
+			continue
+		}
+
+		if chapter != nil {
+			chapters = append(chapters, *chapter)
+			// Use current time for last updated since chapter doesn't have this field
+			lastUpdated = time.Now().Unix()
+		}
+	}
+
+	// Skip series with no chapters
+	if len(chapters) == 0 {
+		return nil, nil
+	}
+
+	// Get full metadata
+	actualSeriesTitle := ms.extractSeriesTitleFromRegistry(seriesPath)
+	if actualSeriesTitle == "" {
+		actualSeriesTitle = seriesName
+	}
+
+	mediaId := ms.extractMediaIdFromRegistry(seriesPath)
+
+	// Find cover image with full search
+	coverImagePath := ms.findCoverImage(seriesPath)
+
+	return &DownloadedMangaSeries{
+		SeriesTitle:    actualSeriesTitle,
+		SeriesPath:     seriesPath,
+		MediaID:        mediaId,
+		CoverImagePath: coverImagePath,
+		ChapterCount:   len(chapters),
+		Chapters:       chapters,
+		LastUpdated:    lastUpdated,
+	}, nil
+}
+
+// QueueForEnhancement queues a series for background metadata enhancement
+func (ms *MetadataScanner) QueueForEnhancement(seriesPath string) {
+	if !ms.workerRunning {
+		return
+	}
+
+	select {
+	case ms.backgroundWorker <- seriesPath:
+		ms.logger.Debug().Str("seriesPath", seriesPath).Msg("manga metadata scanner: Queued series for enhancement")
+	default:
+		// Channel full, skip this enhancement
+		ms.logger.Debug().Str("seriesPath", seriesPath).Msg("manga metadata scanner: Enhancement queue full, skipping")
+	}
 }
