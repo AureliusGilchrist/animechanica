@@ -1,0 +1,71 @@
+"use client"
+
+import { CustomLibraryBanner } from "@/app/(main)/(library)/_containers/custom-library-banner"
+import { MediaEntryPageLoadingDisplay } from "@/app/(main)/_features/media/_components/media-entry-page-loading-display"
+import { LibraryHeader } from "@/app/(main)/manga/_components/library-header"
+import { useHandleMangaCollection } from "@/app/(main)/manga/_lib/handle-manga-collection"
+import { MainLibraryView } from "@/app/(main)/manga/_screens/main-library-view"
+import { cn } from "@/components/ui/core/styling"
+import { ThemeLibraryScreenBannerType, useThemeSettings } from "@/lib/theme/hooks"
+import { __isDesktop__ } from "@/types/constants"
+import React from "react"
+
+export default function MangaPageClient() {
+    const [mounted, setMounted] = React.useState(false)
+    React.useEffect(() => setMounted(true), [])
+    const {
+        mangaCollection,
+        filteredMangaCollection,
+        mangaCollectionLoading,
+        storedFilters,
+        storedProviders,
+        mangaCollectionGenres,
+        hasManga,
+    } = useHandleMangaCollection()
+
+    const ts = useThemeSettings()
+
+    if (!mounted) return null
+    if (!mangaCollection || mangaCollectionLoading) return <MediaEntryPageLoadingDisplay />
+
+    return (
+        <div
+            data-manga-page-container
+            data-stored-filters={JSON.stringify(storedFilters)}
+            data-stored-providers={JSON.stringify(storedProviders)}
+        >
+            {(
+                (!!ts.libraryScreenCustomBannerImage && ts.libraryScreenBannerType === ThemeLibraryScreenBannerType.Custom)
+            ) && (
+                <>
+                    <CustomLibraryBanner isLibraryScreen />
+                    <div
+                        data-manga-page-custom-banner-spacer
+                        className={cn("h-14")}
+                    ></div>
+                </>
+            )}
+            {ts.libraryScreenBannerType === ThemeLibraryScreenBannerType.Dynamic && (
+                <>
+                    <LibraryHeader manga={mangaCollection?.lists?.flatMap(l => l.entries)?.flatMap(e => e?.media)?.filter(Boolean) || []} />
+                    <div
+                        data-manga-page-dynamic-banner-spacer
+                        className={cn(
+                            !__isDesktop__ && "h-28",
+                            (!__isDesktop__ && ts.hideTopNavbar) && "h-40",
+                            __isDesktop__ && "h-40",
+                        )}
+                    ></div>
+                </>
+            )}
+
+            <MainLibraryView
+                collection={mangaCollection}
+                filteredCollection={filteredMangaCollection}
+                genres={mangaCollectionGenres}
+                storedProviders={storedProviders}
+                hasManga={hasManga}
+            />
+        </div>
+    )
+}

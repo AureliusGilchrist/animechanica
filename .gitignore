@@ -1,0 +1,91 @@
+.idea
+.junie
+logs/
+*.db
+.run/
+testdata/
+.vscode
+.cursor
+.DS_Store
+*/.DS_Store
+data/*
+Dockerfile
+Dockerfile.dev
+dev.dockerfile
+.dockerignore
+
+go.work
+
+_docker-compose.yml
+
+logs
+web/
+web-desktop/
+web-denshi/
+out/
+./assets/
+
+test/testdata/**/*.json
+test/sample
+test/providers.json
+test/db.json
+test/providers.json
+test/config.json
+test/config.toml
+whats-new.md
+
+*/mock_data.json
+
+TODO-priv.md
+
+##
+## Parser
+##
+seanime-parser/.git
+
+##
+## Web
+##
+seanime-web/node_modules
+seanime-web/out
+seanime-web/out-desktop
+seanime-web/out-denshi
+seanime-web/web
+seanime-web/.next
+seanime-web/.idea
+# dependencies
+seanime-web/.pnp
+seanime-web/.pnp.js
+seanime-web/.yarn/install-state.gz
+# testing
+seanime-web/coverage
+# next.js
+# production
+seanime-web/build
+# misc
+seanime-web/.DS_Store
+seanime-web/*.pem
+# debug
+seanime-web/npm-debug.log*
+seanime-web/yarn-debug.log*
+seanime-web/yarn-error.log*
+# local env files
+seanime-web/.env*.local
+# vercel
+seanime-web/.vercel
+# typescript
+seanime-web/*.tsbuildinfo
+seanime-web/next-env.d.ts
+seanime-web/snapshot
+seanime-web/logs
+seanime-web/analyze
+seanime-web/TODO-priv.md
+seanime-web/CHANGELOG-priv.md
+
+codegen/generated/hooks.mdx
+
+
+internal/extension_repo/goja_onlinestream_test/test1.ts
+internal/extension_repo/goja_plugin_test
+
+*.sh
