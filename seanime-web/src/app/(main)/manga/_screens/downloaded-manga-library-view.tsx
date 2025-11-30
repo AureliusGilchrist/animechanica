@@ -43,7 +43,28 @@ export function DownloadedMangaLibraryView(props: DownloadedMangaLibraryViewProp
         })
     }
 
-    // NOTE: Do not early-return here. Keep hooks order stable across renders.
+    if (isLoading) {
+        return (
+            <PageWrapper className="space-y-6">
+                <div className="flex items-center justify-center min-h-[50vh]">
+                    <LoadingSpinner />
+                </div>
+            </PageWrapper>
+        )
+    }
+
+    if (error) {
+        return (
+            <PageWrapper className="space-y-6">
+                <LuffyError title="Failed to load downloaded manga">
+                    <p>Could not fetch downloaded manga series. Please try again.</p>
+                    <Button onClick={() => refetch()} className="mt-4">
+                        Retry
+                    </Button>
+                </LuffyError>
+            </PageWrapper>
+        )
+    }
 
     // Flatten items from pages
     const items = React.useMemo(() => {
@@ -104,18 +125,7 @@ export function DownloadedMangaLibraryView(props: DownloadedMangaLibraryViewProp
                 </Button>
             </div>
 
-            {error ? (
-                <LuffyError title="Failed to load downloaded manga">
-                    <p>Could not fetch downloaded manga series. Please try again.</p>
-                    <Button onClick={() => refetch()} className="mt-4">
-                        Retry
-                    </Button>
-                </LuffyError>
-            ) : isLoading ? (
-                <div className="flex items-center justify-center min-h-[50vh]">
-                    <LoadingSpinner />
-                </div>
-            ) : !items || items.length === 0 ? (
+            {!items || items.length === 0 ? (
                 <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
                     <div className="text-center">
                         <h3 className="text-lg font-medium text-muted-foreground">No downloaded manga found</h3>
@@ -137,13 +147,11 @@ export function DownloadedMangaLibraryView(props: DownloadedMangaLibraryViewProp
             )}
 
             {/* Infinite loader */}
-            {!error && !isLoading && (
-                <div ref={sentinelRef} className="flex items-center justify-center py-6">
-                    {isFetchingNextPage ? <LoadingSpinner /> : hasNextPage ? (
-                        <Button onClick={() => fetchNextPage()} intent="white" size="sm">Load more</Button>
-                    ) : null}
-                </div>
-            )}
+            <div ref={sentinelRef} className="flex items-center justify-center py-6">
+                {isFetchingNextPage ? <LoadingSpinner /> : hasNextPage ? (
+                    <Button onClick={() => fetchNextPage()} intent="white" size="sm">Load more</Button>
+                ) : null}
+            </div>
         </PageWrapper>
     )
 }
