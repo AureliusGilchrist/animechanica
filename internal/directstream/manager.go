@@ -60,6 +60,11 @@ type (
 
 		parserCache *result.Cache[string, *mkvparser.MetadataParser]
 		//playbackStatusSubscribers *result.Map[string, *PlaybackStatusSubscriber]
+
+		// Session-aware progress update
+		currentSessionID             string
+		currentSessionMu             sync.Mutex
+		updateProgressForSessionFunc func(ctx context.Context, sessionID string, mediaID int, progress int, totalEpisodes *int) error
 	}
 
 	Settings struct {
@@ -68,31 +73,33 @@ type (
 	}
 
 	NewManagerOptions struct {
-		Logger                     *zerolog.Logger
-		WSEventManager             events.WSEventManagerInterface
-		MetadataProviderRef        *util.Ref[metadata_provider.Provider]
-		ContinuityManager          *continuity.Manager
-		DiscordPresence            *discordrpc_presence.Presence
-		PlatformRef                *util.Ref[platform.Platform]
-		RefreshAnimeCollectionFunc func()
-		IsOfflineRef               *util.Ref[bool]
-		NativePlayer               *nativeplayer.NativePlayer
+		Logger                       *zerolog.Logger
+		WSEventManager               events.WSEventManagerInterface
+		MetadataProviderRef          *util.Ref[metadata_provider.Provider]
+		ContinuityManager            *continuity.Manager
+		DiscordPresence              *discordrpc_presence.Presence
+		PlatformRef                  *util.Ref[platform.Platform]
+		RefreshAnimeCollectionFunc   func()
+		IsOfflineRef                 *util.Ref[bool]
+		NativePlayer                 *nativeplayer.NativePlayer
+		UpdateProgressForSessionFunc func(ctx context.Context, sessionID string, mediaID int, progress int, totalEpisodes *int) error
 	}
 )
 
 func NewManager(options NewManagerOptions) *Manager {
 	ret := &Manager{
-		Logger:                     options.Logger,
-		wsEventManager:             options.WSEventManager,
-		metadataProviderRef:        options.MetadataProviderRef,
-		continuityManager:          options.ContinuityManager,
-		discordPresence:            options.DiscordPresence,
-		platformRef:                options.PlatformRef,
-		refreshAnimeCollectionFunc: options.RefreshAnimeCollectionFunc,
-		isOfflineRef:               options.IsOfflineRef,
-		currentStream:              mo.None[Stream](),
-		nativePlayer:               options.NativePlayer,
-		parserCache:                result.NewCache[string, *mkvparser.MetadataParser](),
+		Logger:                       options.Logger,
+		wsEventManager:               options.WSEventManager,
+		metadataProviderRef:          options.MetadataProviderRef,
+		continuityManager:            options.ContinuityManager,
+		discordPresence:              options.DiscordPresence,
+		platformRef:                  options.PlatformRef,
+		refreshAnimeCollectionFunc:   options.RefreshAnimeCollectionFunc,
+		isOfflineRef:                 options.IsOfflineRef,
+		currentStream:                mo.None[Stream](),
+		nativePlayer:                 options.NativePlayer,
+		parserCache:                  result.NewCache[string, *mkvparser.MetadataParser](),
+		updateProgressForSessionFunc: options.UpdateProgressForSessionFunc,
 	}
 
 	ret.nativePlayerSubscriber = ret.nativePlayer.Subscribe("directstream")
@@ -100,6 +107,20 @@ func NewManager(options NewManagerOptions) *Manager {
 	ret.listenToNativePlayerEvents()
 
 	return ret
+}
+
+// SetCurrentSessionID sets the session ID for the current playback.
+func (m *Manager) SetCurrentSessionID(sessionID string) {
+	m.currentSessionMu.Lock()
+	defer m.currentSessionMu.Unlock()
+	m.currentSessionID = sessionID
+}
+
+// GetCurrentSessionID returns the session ID for the current playback.
+func (m *Manager) GetCurrentSessionID() string {
+	m.currentSessionMu.Lock()
+	defer m.currentSessionMu.Unlock()
+	return m.currentSessionID
 }
 
 func (m *Manager) SetAnimeCollection(ac *anilist.AnimeCollection) {

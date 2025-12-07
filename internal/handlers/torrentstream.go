@@ -144,6 +144,11 @@ func (h *Handler) HandleTorrentstreamStartStream(c echo.Context) error {
 		return h.RespondWithError(c, err)
 	}
 
+	// Set the session ID for the current playback so progress updates go to the correct user
+	sessionID := GetSessionID(c)
+	h.App.PlaybackManager.SetCurrentSessionID(sessionID)
+	h.App.DirectStreamManager.SetCurrentSessionID(sessionID)
+
 	userAgent := c.Request().Header.Get("User-Agent")
 
 	err := h.App.TorrentstreamRepository.StartStream(c.Request().Context(), &torrentstream.StartStreamOptions{

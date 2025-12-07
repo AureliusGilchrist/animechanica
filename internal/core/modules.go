@@ -177,8 +177,9 @@ func (a *App) initModulesOnce() {
 		RefreshAnimeCollectionFunc: func() {
 			_, _ = a.RefreshAnimeCollection()
 		},
-		IsOfflineRef: a.IsOfflineRef(),
-		NativePlayer: a.NativePlayer,
+		IsOfflineRef:                 a.IsOfflineRef(),
+		NativePlayer:                 a.NativePlayer,
+		UpdateProgressForSessionFunc: a.UpdateEntryProgressForSession,
 	})
 
 	// +---------------------+

@@ -22,6 +22,10 @@ func (h *Handler) HandlePlaybackPlayVideo(c echo.Context) error {
 		return h.RespondWithError(c, err)
 	}
 
+	// Set the session ID for the current playback so progress updates go to the correct user
+	sessionID := GetSessionID(c)
+	h.App.PlaybackManager.SetCurrentSessionID(sessionID)
+
 	err := h.App.PlaybackManager.StartPlayingUsingMediaPlayer(&playbackmanager.StartPlayingOptions{
 		Payload:   b.Path,
 		UserAgent: c.Request().Header.Get("User-Agent"),
@@ -43,6 +47,9 @@ func (h *Handler) HandlePlaybackPlayVideo(c echo.Context) error {
 //	@route /api/v1/playback-manager/play-random [POST]
 //	@returns bool
 func (h *Handler) HandlePlaybackPlayRandomVideo(c echo.Context) error {
+	// Set the session ID for the current playback so progress updates go to the correct user
+	sessionID := GetSessionID(c)
+	h.App.PlaybackManager.SetCurrentSessionID(sessionID)
 
 	err := h.App.PlaybackManager.StartRandomVideo(&playbackmanager.StartRandomVideoOptions{
 		UserAgent: c.Request().Header.Get("User-Agent"),
@@ -204,6 +211,10 @@ func (h *Handler) HandlePlaybackStartManualTracking(c echo.Context) error {
 	if err := c.Bind(b); err != nil {
 		return h.RespondWithError(c, err)
 	}
+
+	// Set the session ID for the current playback so progress updates go to the correct user
+	sessionID := GetSessionID(c)
+	h.App.PlaybackManager.SetCurrentSessionID(sessionID)
 
 	err := h.App.PlaybackManager.StartManualProgressTracking(&playbackmanager.StartManualProgressTrackingOptions{
 		ClientId:      b.ClientId,

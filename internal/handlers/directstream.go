@@ -30,6 +30,10 @@ func (h *Handler) HandleDirectstreamPlayLocalFile(c echo.Context) error {
 		return h.RespondWithError(c, err)
 	}
 
+	// Set the session ID for the current playback so progress updates go to the correct user
+	sessionID := GetSessionID(c)
+	h.App.DirectStreamManager.SetCurrentSessionID(sessionID)
+
 	return h.App.DirectStreamManager.PlayLocalFile(c.Request().Context(), directstream.PlayLocalFileOptions{
 		ClientId:   b.ClientId,
 		Path:       b.Path,

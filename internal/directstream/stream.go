@@ -292,7 +292,13 @@ func (m *Manager) listenToNativePlayerEvents() {
 							epNum := baseStream.episode.GetProgressNumber()
 							totalEpisodes := baseStream.media.GetTotalEpisodeCount() // total episode count or -1
 
-							_ = baseStream.manager.platformRef.Get().UpdateEntryProgress(context.Background(), mediaId, epNum, &totalEpisodes)
+							// Use session-aware progress update if available
+							sessionID := baseStream.manager.GetCurrentSessionID()
+							if baseStream.manager.updateProgressForSessionFunc != nil {
+								_ = baseStream.manager.updateProgressForSessionFunc(context.Background(), sessionID, mediaId, epNum, &totalEpisodes)
+							} else {
+								_ = baseStream.manager.platformRef.Get().UpdateEntryProgress(context.Background(), mediaId, epNum, &totalEpisodes)
+							}
 						})
 					}
 				}
