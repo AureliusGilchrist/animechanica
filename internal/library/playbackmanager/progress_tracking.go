@@ -666,13 +666,25 @@ func (pm *PlaybackManager) updateProgress() (err error) {
 		return errors.New("media ID not found")
 	}
 
-	// Update the progress on AniList
-	err = pm.platformRef.Get().UpdateEntryProgress(
-		context.Background(),
-		mediaId,
-		epNum,
-		&totalEpisodes,
-	)
+	// Update the progress on AniList using session-aware function if available
+	sessionID := pm.GetCurrentSessionID()
+	if pm.updateProgressForSessionFunc != nil {
+		err = pm.updateProgressForSessionFunc(
+			context.Background(),
+			sessionID,
+			mediaId,
+			epNum,
+			&totalEpisodes,
+		)
+	} else {
+		// Fall back to global platform if no session-aware function is set
+		err = pm.platformRef.Get().UpdateEntryProgress(
+			context.Background(),
+			mediaId,
+			epNum,
+			&totalEpisodes,
+		)
+	}
 	if err != nil {
 		pm.Logger.Error().Err(err).Msg("playback manager: Error occurred while updating progress on AniList")
 		return ErrProgressUpdateAnilist

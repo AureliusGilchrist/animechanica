@@ -2819,13 +2819,6 @@ export type HibikeOnlinestream_SearchResult = {
  */
 export type HibikeOnlinestream_SubOrDub = "sub" | "dub" | "both"
 
-/**
- * - Filepath: internal/extension/hibike/onlinestream/types.go
- * - Filename: types.go
- * - Package: hibikeonlinestream
- */
-export type HibikeOnlinestream_VideoSourceType = "mp4" | "m3u8" | "unknown"
-
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Hibiketorrent
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3677,6 +3670,7 @@ export type Models_LibrarySettings = {
     autoSyncToLocalAccount: boolean
     autoSaveCurrentMediaOffline: boolean
     useFallbackMetadataProvider: boolean
+    progressUpdateThreshold: number
 }
 
 /**
@@ -3884,6 +3878,7 @@ export type Models_TorrentSettings = {
     qbittorrentUsername: string
     qbittorrentPassword: string
     qbittorrentTags: string
+    qbittorrentDockerized: boolean
     transmissionPath: string
     transmissionHost: string
     transmissionPort: number
@@ -4199,7 +4194,6 @@ export type Onlinestream_Episode = {
     image?: string
     description?: string
     isFiller?: boolean
-    metadata?: Anime_Episode
 }
 
 /**
@@ -4251,9 +4245,7 @@ export type Onlinestream_VideoSource = {
     server: string
     headers?: Record<string, string>
     url: string
-    label?: string
     quality: string
-    type?: HibikeOnlinestream_VideoSourceType
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

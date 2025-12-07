@@ -5,10 +5,12 @@ import { SeaImage } from "@/components/shared/sea-image"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/components/ui/core/styling"
 import { ProgressBar } from "@/components/ui/progress-bar"
+import { Tooltip } from "@/components/ui/tooltip"
 import { getImageUrl } from "@/lib/server/assets"
 import { useThemeSettings } from "@/lib/theme/hooks"
 import React from "react"
 import { AiFillPlayCircle, AiFillWarning } from "react-icons/ai"
+import { BiHelpCircle } from "react-icons/bi"
 
 type EpisodeGridItemProps = {
     media: AL_BaseAnime,
@@ -99,15 +101,35 @@ export const EpisodeGridItem: React.FC<EpisodeGridItemProps & React.ComponentPro
         >
 
             {isFiller && (
-                <Badge
-                    data-episode-grid-item-filler-badge
+                <div
+                    data-episode-grid-item-filler-badge-container
                     className={cn(
-                        "font-semibold absolute top-3 left-0 z-[5] text-white bg-orange-800 !bg-opacity-100 rounded-[--radius-md] text-base rounded-bl-none rounded-tr-none",
-                        !!ts.libraryScreenCustomBackgroundImage && ts.libraryScreenCustomBackgroundOpacity > 5 && "top-3  left-3",
+                        "absolute top-3 left-0 z-[5] flex items-center gap-1",
+                        !!ts.libraryScreenCustomBackgroundImage && ts.libraryScreenCustomBackgroundOpacity > 5 && "top-3 left-3",
                     )}
-                    intent="gray"
-                    size="lg"
-                >Filler</Badge>
+                >
+                    <Badge
+                        data-episode-grid-item-filler-badge
+                        className={cn(
+                            "font-semibold text-white bg-orange-800 !bg-opacity-100 rounded-[--radius-md] text-base rounded-bl-none rounded-tr-none",
+                        )}
+                        intent="gray"
+                        size="lg"
+                    >Filler</Badge>
+                    <Tooltip
+                        trigger={
+                            <span className="cursor-help text-orange-300 hover:text-orange-200 transition-colors">
+                                <BiHelpCircle className="text-lg" />
+                            </span>
+                        }
+                        side="right"
+                    >
+                        <p className="max-w-xs text-sm">
+                            This episode is marked as <strong>filler</strong> (non-canon content not from the original source material).
+                            You can skip it without missing the main story.
+                        </p>
+                    </Tooltip>
+                </div>
             )}
 
             <div
@@ -134,7 +156,13 @@ export const EpisodeGridItem: React.FC<EpisodeGridItemProps & React.ComponentPro
                     )}
                     onClick={onClick}
                 >
-                    <div data-episode-grid-item-image-overlay className="absolute z-[1] rounded-[--radius-md] w-full h-full"></div>
+                        <div 
+                        data-episode-grid-item-image-overlay 
+                        className={cn(
+                            "absolute z-[1] rounded-[--radius-md] w-full h-full",
+                            isFiller && "bg-orange-950/40"
+                        )}
+                    ></div>
                     <div
                         data-episode-grid-item-image-background
                         className="bg-[--background] absolute z-[0] rounded-[--radius-md] w-full h-full"
@@ -158,6 +186,7 @@ export const EpisodeGridItem: React.FC<EpisodeGridItemProps & React.ComponentPro
                         sizes="10rem"
                         className={cn("object-cover object-center transition select-none", {
                             "opacity-25 lg:group-hover/episode-list-item:opacity-100": isWatched && !isSelected,
+                            "grayscale-[30%] brightness-75": isFiller,
                         }, imageClassName)}
                         data-src={image}
                     />}
@@ -179,7 +208,7 @@ export const EpisodeGridItem: React.FC<EpisodeGridItemProps & React.ComponentPro
                         className={cn(
                             !episodeTitle && "text-lg font-semibold",
                             !!episodeTitle && "transition line-clamp-2 text-base text-[--muted]",
-                            // { "opacity-50 group-hover/episode-list-item:opacity-100": isWatched },
+                            isFiller && "opacity-70",
                         )}
                         data-episode-grid-item-title
                     >
@@ -187,6 +216,7 @@ export const EpisodeGridItem: React.FC<EpisodeGridItemProps & React.ComponentPro
                             className={cn(
                                 "font-medium text-[--foreground]",
                                 isSelected && "text-[--brand]",
+                                isFiller && "text-orange-200/80",
                             )}
                         >
                             {title?.replaceAll("`", "'")}</span>{(!!episodeTitle && !!length) &&
@@ -196,8 +226,11 @@ export const EpisodeGridItem: React.FC<EpisodeGridItemProps & React.ComponentPro
                     {!!episodeTitle &&
                         <p
                             data-episode-grid-item-episode-title
-                            className={cn("text-md font-medium lg:text-lg text-gray-300 line-clamp-2 lg:!leading-6",
-                                episodeTitleClassName)}
+                            className={cn(
+                                "text-md font-medium lg:text-lg text-gray-300 line-clamp-2 lg:!leading-6",
+                                isFiller && "text-orange-200/60",
+                                episodeTitleClassName
+                            )}
                         >{episodeTitle?.replaceAll("`", "'")}</p>}
 
 

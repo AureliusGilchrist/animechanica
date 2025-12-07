@@ -43,6 +43,7 @@ import (
 	"seanime/internal/playlist"
 	"seanime/internal/plugin"
 	"seanime/internal/report"
+	"seanime/internal/session"
 	"seanime/internal/torrent_clients/torrent_client"
 	"seanime/internal/torrents/torrent"
 	"seanime/internal/torrentstream"
@@ -164,6 +165,9 @@ type (
 		PlaylistManager *playlist.Manager
 		LibraryExplorer *library_explorer.LibraryExplorer
 		NakamaManager   *nakama.Manager
+
+		// Multi-user session support
+		SessionStore *session.Store
 	}
 )
 
@@ -430,6 +434,7 @@ func NewApp(configOpts *ConfigOptions, selfupdater *updater.SelfUpdater) *App {
 		HookManager:                     hookManager,
 		isOfflineRef:                    isOfflineRef,
 		ServerPasswordHash:              serverPasswordHash,
+		SessionStore:                    session.NewStore(anilistCacheDir),
 	}
 
 	// Run database migrations if version has changed

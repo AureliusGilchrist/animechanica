@@ -1,6 +1,5 @@
-import { MediaCaptionsManager } from "@/app/(main)/_features/video-core/video-core-media-captions"
+import { NativePlayer_PlaybackInfo } from "@/api/generated/types"
 import { VideoCoreSubtitleManager } from "@/app/(main)/_features/video-core/video-core-subtitles"
-import { VideoCorePlaybackInfo } from "@/app/(main)/_features/video-core/video-core.atoms"
 import { logger } from "@/lib/helpers/debug"
 import { atom } from "jotai"
 
@@ -12,14 +11,13 @@ export const vc_pipManager = atom<VideoCorePipManager | null>(null)
 export class VideoCorePipManager {
     private video: HTMLVideoElement | null = null
     private subtitleManager: VideoCoreSubtitleManager | null = null
-    private mediaCaptionsManager: MediaCaptionsManager | null = null
     private controller = new AbortController()
     private canvasController: AbortController | null = null
     private readonly onPipElementChange: (element: HTMLVideoElement | null) => void
     private pipProxy: HTMLVideoElement | null = null
     private isSyncingFromMain = false
     private isSyncingFromPip = false
-    private playbackInfo: VideoCorePlaybackInfo | null = null
+    private playbackInfo: NativePlayer_PlaybackInfo | null = null
 
     constructor(onPipElementChange: (element: HTMLVideoElement | null) => void) {
         this.onPipElementChange = onPipElementChange
@@ -40,7 +38,7 @@ export class VideoCorePipManager {
         }, { signal: this.controller.signal })
     }
 
-    setVideo(video: HTMLVideoElement, playbackInfo: VideoCorePlaybackInfo) {
+    setVideo(video: HTMLVideoElement, playbackInfo: NativePlayer_PlaybackInfo) {
         this.video = video
 
         if (this.video) {
@@ -56,10 +54,6 @@ export class VideoCorePipManager {
 
     setSubtitleManager(subtitleManager: VideoCoreSubtitleManager) {
         this.subtitleManager = subtitleManager
-    }
-
-    setMediaCaptionsManager(mediaCaptionsManager: MediaCaptionsManager) {
-        this.mediaCaptionsManager = mediaCaptionsManager
     }
 
     togglePip(enable?: boolean) {
@@ -88,17 +82,14 @@ export class VideoCorePipManager {
         }
 
         try {
-            const hasLibassSubtitles = this.subtitleManager?.getSelectedTrackNumberOrNull?.() != null
-            const hasMediaCaptions = this.mediaCaptionsManager?.getSelectedTrackIndexOrNull?.() != null
-            const hasActiveSubtitles = hasLibassSubtitles || hasMediaCaptions
-
+            const hasActiveSubtitles = this.subtitleManager?.getSelectedTrack?.() !== null
             if (!hasActiveSubtitles) {
                 log.info("Entering PiP without subtitles")
                 await this.video.requestPictureInPicture()
                 return
             }
 
-            log.info("Entering PiP with subtitle burning", { hasLibassSubtitles, hasMediaCaptions })
+            log.info("Entering PiP with subtitle burning")
             await this.enterPipWithSubtitles()
         }
         catch (error) {
@@ -112,7 +103,6 @@ export class VideoCorePipManager {
         this.controller.abort()
         this.video = null
         this.subtitleManager = null
-        this.mediaCaptionsManager = null
     }
 
     private handleEnterPip = () => {
@@ -166,24 +156,10 @@ export class VideoCorePipManager {
         }
 
         context.drawImage(this.video, 0, 0)
-
-        // Draw ASS/SSA subtitles
         const subtitleCanvas = this.subtitleManager?.libassRenderer?._canvas
         if (subtitleCanvas && context.canvas.width && context.canvas.height) {
             context.drawImage(subtitleCanvas, 0, 0, context.canvas.width, context.canvas.height)
         }
-
-        // Draw PGS subtitles
-        const pgsCanvas = this.subtitleManager?.pgsRenderer?._canvas
-        if (pgsCanvas && context.canvas.width && context.canvas.height) {
-            context.drawImage(pgsCanvas, 0, 0, context.canvas.width, context.canvas.height)
-        }
-
-        // Draw media captions
-        if (this.mediaCaptionsManager) {
-            this.mediaCaptionsManager.renderToCanvas(context, context.canvas.width, context.canvas.height, this.video.currentTime)
-        }
-
         animationFrameRef.current = this.video.requestVideoFrameCallback(this.renderToCanvas(pipVideo, context, animationFrameRef))
     }
 
@@ -206,7 +182,7 @@ export class VideoCorePipManager {
     }
 
     private async enterPipWithSubtitles() {
-        if (!this.video || (!this.subtitleManager && !this.mediaCaptionsManager)) return
+        if (!this.video || !this.subtitleManager) return
 
         const canvas = document.createElement("canvas")
         const context = canvas.getContext("2d")
@@ -258,13 +234,6 @@ export class VideoCorePipManager {
         const subtitleCanvas = this.subtitleManager?.libassRenderer?._canvas
         if (subtitleCanvas && canvas.width && canvas.height) {
             context.drawImage(subtitleCanvas, 0, 0, canvas.width, canvas.height)
-        }
-        const pgsCanvas = this.subtitleManager?.pgsRenderer?._canvas
-        if (pgsCanvas && canvas.width && canvas.height) {
-            context.drawImage(pgsCanvas, 0, 0, canvas.width, canvas.height)
-        }
-        if (this.mediaCaptionsManager) {
-            this.mediaCaptionsManager.renderToCanvas(context, canvas.width, canvas.height, this.video.currentTime)
         }
 
         // wait for metadata
@@ -330,7 +299,6 @@ export class VideoCorePipManager {
                     return
                 }
                 this.subtitleManager?.libassRenderer?.resize(width, height)
-                this.subtitleManager?.pgsRenderer?.resize()
             }, { signal: this.canvasController.signal })
 
             log.info("Successfully entered PiP")

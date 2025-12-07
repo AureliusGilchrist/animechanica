@@ -88,6 +88,15 @@ func (h *Handler) getAnimeEntry(c echo.Context, lfs []*anime.LocalFile, mId int)
 	entry = fillerEvent.Entry
 
 	if !fillerEvent.DefaultPrevented {
+		// Auto-fetch filler data if not already cached
+		if !h.App.FillerManager.HasFillerFetched(mId) && entry.Media != nil {
+			go func() {
+				defer util.HandlePanicInModuleThen("handlers/getAnimeEntry/AutoFetchFillerData", func() {
+					h.App.Logger.Error().Int("mediaId", mId).Msg("handlers: Failed to auto-fetch filler data")
+				})
+				_ = h.App.FillerManager.FetchAndStoreFillerData(mId, entry.Media.GetAllTitlesDeref())
+			}()
+		}
 		h.App.FillerManager.HydrateFillerData(fillerEvent.Entry)
 	}
 
@@ -327,7 +336,7 @@ func (h *Handler) HandleFetchAnimeEntrySuggestions(c echo.Context) error {
 		nil,
 		nil,
 		h.App.Logger,
-		h.App.GetUserAnilistToken(),
+		h.GetSessionAnilistToken(c), // Use session-specific token for multi-user support
 	)
 	if err != nil {
 		return h.RespondWithError(c, err)

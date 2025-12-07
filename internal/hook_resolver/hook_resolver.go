@@ -10,8 +10,6 @@ type Resolver interface {
 	// PreventDefault prevents the native handler from being called.
 	PreventDefault()
 
-	IsDefaultPrevented() bool
-
 	SetNextFunc(f func() error)
 }
 
@@ -44,10 +42,6 @@ func (e *Event) Next() error {
 
 func (e *Event) PreventDefault() {
 	e.DefaultPrevented = true
-}
-
-func (e *Event) IsDefaultPrevented() bool {
-	return e.DefaultPrevented
 }
 
 // NextFunc returns the function that Next calls.

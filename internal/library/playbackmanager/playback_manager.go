@@ -101,6 +101,10 @@ type (
 		playbackStatusSubscribers *result.Map[string, *PlaybackStatusSubscriber]
 
 		isPlaylistActive atomic.Bool
+
+		// Session-aware progress update
+		currentSessionID                 string                                                                     // The session ID of the user who initiated the current playback
+		updateProgressForSessionFunc     func(ctx context.Context, sessionID string, mediaID int, progress int, totalEpisodes *int) error // Session-aware progress update function
 	}
 
 	// PlaybackStatusSubscriber provides a single event channel for all playback events
@@ -179,15 +183,16 @@ type (
 	}
 
 	NewPlaybackManagerOptions struct {
-		WSEventManager             events.WSEventManagerInterface
-		Logger                     *zerolog.Logger
-		PlatformRef                *util.Ref[platform.Platform]
-		MetadataProviderRef        *util.Ref[metadata_provider.Provider]
-		Database                   *db.Database
-		RefreshAnimeCollectionFunc func() // This function is called to refresh the AniList collection
-		DiscordPresence            *discordrpc_presence.Presence
-		IsOfflineRef               *util.Ref[bool]
-		ContinuityManager          *continuity.Manager
+		WSEventManager                   events.WSEventManagerInterface
+		Logger                           *zerolog.Logger
+		PlatformRef                      *util.Ref[platform.Platform]
+		MetadataProviderRef              *util.Ref[metadata_provider.Provider]
+		Database                         *db.Database
+		RefreshAnimeCollectionFunc       func() // This function is called to refresh the AniList collection
+		DiscordPresence                  *discordrpc_presence.Presence
+		IsOfflineRef                     *util.Ref[bool]
+		ContinuityManager                *continuity.Manager
+		UpdateProgressForSessionFunc     func(ctx context.Context, sessionID string, mediaID int, progress int, totalEpisodes *int) error // Session-aware progress update function
 	}
 
 	Settings struct {
@@ -232,9 +237,25 @@ func New(opts *NewPlaybackManagerOptions) *PlaybackManager {
 		currentMediaListEntry:        mo.None[*anilist.AnimeListEntry](),
 		continuityManager:            opts.ContinuityManager,
 		playbackStatusSubscribers:    result.NewMap[string, *PlaybackStatusSubscriber](),
+		updateProgressForSessionFunc: opts.UpdateProgressForSessionFunc,
 	}
 
 	return pm
+}
+
+// SetCurrentSessionID sets the session ID for the current playback.
+// This should be called when playback is initiated from a handler.
+func (pm *PlaybackManager) SetCurrentSessionID(sessionID string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.currentSessionID = sessionID
+}
+
+// GetCurrentSessionID returns the session ID for the current playback.
+func (pm *PlaybackManager) GetCurrentSessionID() string {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	return pm.currentSessionID
 }
 
 func (pm *PlaybackManager) SetAnimeCollection(ac *anilist.AnimeCollection) {

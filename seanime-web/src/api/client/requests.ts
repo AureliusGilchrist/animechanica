@@ -23,6 +23,7 @@ type SeaQuery<D> = {
  * Create axios query to the server
  * - First generic: Return type
  * - Second generic: Params/Data type
+ * - Includes credentials (cookies) for multi-user session support
  */
 export async function buildSeaQuery<T, D extends any = any>(
     {
@@ -46,6 +47,7 @@ export async function buildSeaQuery<T, D extends any = any>(
         method,
         data,
         params,
+        withCredentials: true, // Include cookies for session-based multi-user support
     })
     const response = _handleSeaResponse<T>(res.data)
     return response.data

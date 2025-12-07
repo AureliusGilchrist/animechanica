@@ -2,15 +2,13 @@ package report
 
 import (
 	"fmt"
+	"github.com/rs/zerolog"
+	"github.com/samber/lo"
+	"github.com/samber/mo"
 	"runtime"
 	"seanime/internal/constants"
 	"seanime/internal/database/models"
 	"seanime/internal/library/anime"
-	"seanime/internal/util"
-
-	"github.com/rs/zerolog"
-	"github.com/samber/lo"
-	"github.com/samber/mo"
 )
 
 type Repository struct {
@@ -65,10 +63,6 @@ func (r *Repository) SaveIssueReport(opts SaveIssueReportOptions) error {
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create issue report: %w", err)
-	}
-
-	for _, log := range opts.ConsoleLogs {
-		log.Content = util.StripAnsi(log.Content)
 	}
 
 	issueReport.ClickLogs = opts.ClickLogs

@@ -40,10 +40,6 @@ func (mp *OfflineMetadataProvider) Close() {
 	// no-op
 }
 
-func (mp *OfflineMetadataProvider) ClearCache() {
-	// no-op
-}
-
 func (mp *OfflineMetadataProvider) SetUseFallbackProvider(useFallback bool) {
 	// no-op
 }

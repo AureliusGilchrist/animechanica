@@ -112,6 +112,11 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1 := e.Group("/api").Group("/v1") // Commented out for now, will be used later
 
 	//
+	// Session middleware - enables multi-user support via browser cookies
+	//
+	v1.Use(h.SessionMiddleware)
+
+	//
 	// Auth middleware
 	//
 	v1.Use(h.OptionalAuthMiddleware)
@@ -425,7 +430,6 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	v1.GET("/directstream/stream", echo.WrapHandler(h.HandleDirectstreamGetStream()))
 	v1.HEAD("/directstream/stream", echo.WrapHandler(h.HandleDirectstreamGetStream()))
 	v1.GET("/directstream/att/*", h.HandleDirectstreamGetAttachments)
-	v1.POST("/directstream/subs/convert-to-ass", h.HandleDirectstreamFetchAndConvertToASS)
 
 	//
 	// Torrent stream

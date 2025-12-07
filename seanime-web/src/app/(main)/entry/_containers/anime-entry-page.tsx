@@ -13,7 +13,6 @@ import { __torrentSearch_selectionAtom, TorrentSearchDrawer } from "@/app/(main)
 import { TorrentStreamPage } from "@/app/(main)/entry/_containers/torrent-stream/torrent-stream-page"
 import { OnlinestreamPage } from "@/app/(main)/onlinestream/_containers/onlinestream-page"
 import { PageWrapper } from "@/components/shared/page-wrapper"
-import { cn } from "@/components/ui/core/styling"
 import { StaticTabs } from "@/components/ui/tabs"
 import { useThemeSettings } from "@/lib/theme/hooks"
 import { atom } from "jotai"
@@ -228,19 +227,10 @@ export function AnimeEntryPage() {
         <div data-anime-entry-page data-media={JSON.stringify(animeEntry.media)} data-anime-entry-list-data={JSON.stringify(animeEntry.listData)}>
             <MetaSection entry={animeEntry} details={animeDetails} />
 
-            <div
-                data-anime-entry-page-content-container
-                className={cn(
-                    "px-4 md:px-8 relative z-[8]",
-                    currentView === "onlinestream" && "z-[100]",
-                )}
-            >
+            <div className="px-4 md:px-8 relative z-[8]" data-anime-entry-page-content-container>
                 <PageWrapper
                     data-anime-entry-page-content
-                    className={cn(
-                        "relative 2xl:order-first pb-10 lg:min-h-[calc(100vh-10rem)]",
-                        currentView === "onlinestream" && "z-[100]",
-                    )}
+                    className="relative 2xl:order-first pb-10 lg:min-h-[calc(100vh-10rem)]"
                     {...{
                         initial: { opacity: 0, y: 20 },
                         animate: { opacity: 1, y: 0 },
@@ -301,10 +291,7 @@ export function AnimeEntryPage() {
                         {currentView === "onlinestream" && <PageWrapper
                             data-anime-entry-page-online-streaming-view
                             key="online-streaming-episodes"
-                            className={cn(
-                                "relative 2xl:order-first pb-10 lg:pt-0",
-                                currentView === "onlinestream" && "z-[100]",
-                            )}
+                            className="relative 2xl:order-first pb-10 lg:pt-0"
                             {...{
                                 initial: { opacity: 0, y: 60 },
                                 animate: { opacity: 1, y: 0 },
@@ -327,13 +314,7 @@ export function AnimeEntryPage() {
                                     animeEntryLoading={animeEntryLoading}
                                     hideBackButton
                                 />
-                                {/*<LegacyOnlinestreamPage*/}
-                                {/*    animeEntry={animeEntry}*/}
-                                {/*    animeEntryLoading={animeEntryLoading}*/}
-                                {/*    hideBackButton*/}
-                                {/*/>*/}
                                 <MediaEntryCharactersSection details={animeDetails} />
-                                <RelationsRecommendationsSection entry={animeEntry} details={animeDetails} />
                             </div>
                         </PageWrapper>}
 

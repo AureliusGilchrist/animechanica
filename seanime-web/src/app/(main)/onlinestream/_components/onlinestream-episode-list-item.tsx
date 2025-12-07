@@ -1,9 +1,12 @@
 import { AL_BaseAnime } from "@/api/generated/types"
 import { imageShimmer } from "@/components/shared/image-helpers"
 import { SeaImage } from "@/components/shared/sea-image"
+import { Badge } from "@/components/ui/badge"
 import { cn } from "@/components/ui/core/styling"
+import { Tooltip } from "@/components/ui/tooltip"
 import React from "react"
 import { AiFillPlayCircle, AiFillWarning } from "react-icons/ai"
+import { BiHelpCircle } from "react-icons/bi"
 
 type EpisodeListItemProps = {
     media: AL_BaseAnime,
@@ -19,6 +22,7 @@ type EpisodeListItemProps = {
     isWatched?: boolean
     unoptimizedImage?: boolean
     isInvalid?: boolean
+    isFiller?: boolean
     imageClassName?: string
     imageContainerClassName?: string
     className?: string
@@ -42,6 +46,7 @@ export const OnlinestreamEpisodeListItem: React.FC<EpisodeListItemProps & React.
         isWatched,
         unoptimizedImage,
         isInvalid,
+        isFiller,
         imageClassName,
         imageContainerClassName,
         className,
@@ -57,13 +62,35 @@ export const OnlinestreamEpisodeListItem: React.FC<EpisodeListItemProps & React.
                 {
                     "border-zinc-500 bg-gray-900 hover:bg-gray-900": isSelected,
                     "border-red-700": isInvalid,
+                    "border-orange-800/50": isFiller && !isSelected && !isInvalid,
                     "opacity-50 pointer-events-none": disabled,
                     "opacity-50": isWatched && !isSelected,
                 }, className,
             )}
             {...rest}
         >
-            {/*{isCompleted && <div className="absolute top-1 left-1 w-full h-1 bg-brand rounded-full"/>}*/}
+            {isFiller && (
+                <div className="absolute top-1 left-1 z-[5] flex items-center gap-1">
+                    <Badge
+                        className="font-semibold text-white bg-orange-800 !bg-opacity-100 rounded-md text-xs"
+                        intent="gray"
+                        size="sm"
+                    >Filler</Badge>
+                    <Tooltip
+                        trigger={
+                            <span className="cursor-help text-orange-300 hover:text-orange-200 transition-colors">
+                                <BiHelpCircle className="text-sm" />
+                            </span>
+                        }
+                        side="right"
+                    >
+                        <p className="max-w-xs text-sm">
+                            This episode is marked as <strong>filler</strong> (non-canon content).
+                            You can skip it without missing the main story.
+                        </p>
+                    </Tooltip>
+                </div>
+            )}
 
             <div
                 className={cn(
@@ -97,6 +124,7 @@ export const OnlinestreamEpisodeListItem: React.FC<EpisodeListItemProps & React.
                         sizes="10rem"
                         className={cn("object-cover object-center transition", {
                             "opacity-25 group-hover/episode-list-item:opacity-100": isWatched,
+                            "grayscale-[30%] brightness-75": isFiller,
                         }, imageClassName)}
                         data-src={image}
                     />}
@@ -122,11 +150,14 @@ export const OnlinestreamEpisodeListItem: React.FC<EpisodeListItemProps & React.
                         className={cn(
                             "font-medium transition text-lg line-clamp-2",
                             { "text-[--muted]": !isSelected },
-                            // { "opacity-50 group-hover/episode-list-item:opacity-100": isWatched },
+                            isFiller && "text-orange-200/80",
                         )}
                     >{!!title ? title?.replaceAll("`", "'") : "No title"}</p>
 
-                    {!!episodeTitle && <p className={cn("text-sm text-[--muted] line-clamp-2")}>{episodeTitle?.replaceAll("`", "'")}</p>}
+                    {!!episodeTitle && <p className={cn(
+                        "text-sm text-[--muted] line-clamp-2",
+                        isFiller && "text-orange-200/60"
+                    )}>{episodeTitle?.replaceAll("`", "'")}</p>}
 
                     {!!fileName && <p className="text-sm text-gray-600 line-clamp-1">{fileName}</p>}
                     {!!description && <p className="text-sm text-[--muted] line-clamp-1 italic">{description}</p>}

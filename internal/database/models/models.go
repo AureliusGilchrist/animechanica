@@ -90,6 +90,9 @@ type LibrarySettings struct {
 	AutoSaveCurrentMediaOffline bool `gorm:"column:auto_save_current_media_offline" json:"autoSaveCurrentMediaOffline"`
 	// v3+
 	UseFallbackMetadataProvider bool `gorm:"column:use_fallback_metadata_provider" json:"useFallbackMetadataProvider"`
+	// Progress update threshold (0.0-1.0), default 0.8 (80%)
+	// When playback reaches this percentage, the episode is marked as watched
+	ProgressUpdateThreshold float64 `gorm:"column:progress_update_threshold" json:"progressUpdateThreshold"`
 }
 
 func (o *LibrarySettings) GetLibraryPaths() (ret []string) {
@@ -193,6 +196,7 @@ type TorrentSettings struct {
 	QBittorrentUsername  string `gorm:"column:qbittorrent_username" json:"qbittorrentUsername"`
 	QBittorrentPassword  string `gorm:"column:qbittorrent_password" json:"qbittorrentPassword"`
 	QBittorrentTags      string `gorm:"column:qbittorrent_tags" json:"qbittorrentTags"`
+	QBittorrentDockerized bool   `gorm:"column:qbittorrent_dockerized" json:"qbittorrentDockerized"`
 	TransmissionPath     string `gorm:"column:transmission_path" json:"transmissionPath"`
 	TransmissionHost     string `gorm:"column:transmission_host" json:"transmissionHost"`
 	TransmissionPort     int    `gorm:"column:transmission_port" json:"transmissionPort"`

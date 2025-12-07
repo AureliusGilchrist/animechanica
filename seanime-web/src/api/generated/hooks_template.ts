@@ -638,17 +638,6 @@
 //     })
 // }
 
-// export function useDirectstreamFetchAndConvertToASS() {
-//     return useServerMutation<string, DirectstreamFetchAndConvertToASS_Variables>({
-//         endpoint: API_ENDPOINTS.DIRECTSTREAM.DirectstreamFetchAndConvertToASS.endpoint,
-//         method: API_ENDPOINTS.DIRECTSTREAM.DirectstreamFetchAndConvertToASS.methods[0],
-//         mutationKey: [API_ENDPOINTS.DIRECTSTREAM.DirectstreamFetchAndConvertToASS.key],
-//         onSuccess: async () => {
-// 
-//         },
-//     })
-// }
-
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // discord
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

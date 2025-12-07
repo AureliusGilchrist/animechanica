@@ -51,7 +51,6 @@ type (
 		GetAnimeMetadataWrapper(anime *anilist.BaseAnime, metadata *metadata.AnimeMetadata) AnimeMetadataWrapper
 		GetCache() *result.BoundedCache[string, *metadata.AnimeMetadata]
 		SetUseFallbackProvider(bool)
-		ClearCache()
 		Close()
 	}
 
@@ -86,10 +85,6 @@ func NewProvider(options *NewProviderImplOptions) Provider {
 func (p *ProviderImpl) Close() {
 	p.customSourceManager.Close()
 	go p.animeMetadataCache.Clear()
-}
-
-func (p *ProviderImpl) ClearCache() {
-	p.animeMetadataCache.Clear()
 }
 
 // GetCache returns the anime metadata cache.

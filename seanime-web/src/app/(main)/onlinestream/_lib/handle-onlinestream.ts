@@ -23,12 +23,18 @@ import React from "react"
 import { useUpdateEffect } from "react-use"
 import { toast } from "sonner"
 
-export function useOnlinestreamEpisodeList(mId: number) {
+export function useOnlinestreamEpisodeList(mId: string | null) {
     const router = useRouter()
     const provider = useAtomValue(__onlinestream_selectedProviderAtom)
     const dubbed = useAtomValue(__onlinestream_selectedDubbedAtom)
 
     const { data, isLoading, isFetching, isSuccess, isError } = useGetOnlineStreamEpisodeList(mId, provider, dubbed)
+
+    // React.useEffect(() => {
+    //     if (isError) {
+    //         router.push("/")
+    //     }
+    // }, [isError])
 
     return {
         media: data?.media,
@@ -41,10 +47,7 @@ export function useOnlinestreamEpisodeList(mId: number) {
 }
 
 
-export function useOnlinestreamEpisodeSource(extensions: ExtensionRepo_OnlinestreamProviderExtensionItem[],
-    mId: number,
-    episodeListFetched: boolean,
-) {
+export function useOnlinestreamEpisodeSource(extensions: ExtensionRepo_OnlinestreamProviderExtensionItem[], mId: string | null, isSuccess: boolean) {
 
     const provider = useAtomValue(__onlinestream_selectedProviderAtom)
     const episodeNumber = useAtomValue(__onlinestream_selectedEpisodeNumberAtom)
@@ -57,7 +60,7 @@ export function useOnlinestreamEpisodeSource(extensions: ExtensionRepo_Onlinestr
         provider,
         episodeNumber,
         (!!extension?.supportsDub) && dubbed,
-        !!mId && episodeNumber !== undefined && episodeListFetched,
+        !!mId && episodeNumber !== undefined && isSuccess,
     )
 
     return {
@@ -121,7 +124,7 @@ export function useOnlinestreamVideoSource(episodeSource: Onlinestream_EpisodeSo
         }
 
 
-        logger("ONLINESTREAM").info("Filtered video sources", videoSources)
+        logger("ONLINESTREAM").info("videoSources", videoSources)
 
         return videoSources[0]
     }, [episodeSource, selectedServer, quality])
@@ -131,15 +134,13 @@ export function useOnlinestreamVideoSource(episodeSource: Onlinestream_EpisodeSo
     }
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-type LegacyHandleOnlinestreamProps = {
-    mediaId: number
+type HandleOnlinestreamProps = {
+    mediaId: string | null
     ref: React.RefObject<MediaPlayerInstance>
 }
 
-export function useLegacyHandleOnlinestream(props: LegacyHandleOnlinestreamProps) {
+export function useHandleOnlinestream(props: HandleOnlinestreamProps) {
     const { mediaId, ref: playerRef } = props
 
     const { providerExtensions, providerExtensionOptions } = useHandleOnlinestreamProviderExtensions()
@@ -471,7 +472,7 @@ export function useLegacyHandleOnlinestream(props: LegacyHandleOnlinestreamProps
 
 }
 
-export type OnlinestreamManagerOpts = ReturnType<typeof useLegacyHandleOnlinestream>
+export type OnlinestreamManagerOpts = ReturnType<typeof useHandleOnlinestream>
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -13,17 +13,13 @@ const nextConfig = {
     reactStrictMode: false,
     images: {
         unoptimized: true,
-        qualities: [10, 20, 30, 40, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100],
     },
     transpilePackages: ["@uiw/react-textarea-code-editor", "@replit/codemirror-vscode-keymap", "media-chrome", "anime4k-webgpu"],
     assetPrefix: isProd ? undefined : (isDesktop ? `http://${internalHost}:43210` : undefined),
-    reactCompiler: true,
-    devIndicators: false,
-    allowedDevOrigins: ["127.0.0.1", "localhost"],
     experimental: {
-        isolatedDevBuild: true,
-        browserDebugInfoInTerminal: !isProd,
+        reactCompiler: true,
     },
+    devIndicators: false,
 }
 
 module.exports = nextConfig

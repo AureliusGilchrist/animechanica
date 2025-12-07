@@ -335,7 +335,7 @@ func (h *Handler) HandleAnilistListAnime(c echo.Context) error {
 		&isAdult,
 		p.CountryOfOrigin,
 		h.App.Logger,
-		h.App.GetUserAnilistToken(),
+		h.GetSessionAnilistToken(c), // Use session-specific token for multi-user support
 	)
 	if err != nil {
 		return h.RespondWithError(c, err)
@@ -393,7 +393,7 @@ func (h *Handler) HandleAnilistListRecentAiringAnime(c echo.Context) error {
 		p.NotYetAired,
 		p.Sort,
 		h.App.Logger,
-		h.App.GetUserAnilistToken(),
+		h.GetSessionAnilistToken(c), // Use session-specific token for multi-user support
 	)
 	if err != nil {
 		return h.RespondWithError(c, err)
@@ -431,7 +431,7 @@ func (h *Handler) HandleAnilistListMissedSequels(c echo.Context) error {
 		shared_platform.NewCacheLayer(h.App.AnilistClientRef),
 		animeCollection,
 		h.App.Logger,
-		h.App.GetUserAnilistToken(),
+		h.GetSessionAnilistToken(c), // Use session-specific token for multi-user support
 	)
 	if err != nil {
 		return h.RespondWithError(c, err)

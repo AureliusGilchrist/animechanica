@@ -52,22 +52,28 @@ var clientInfoCache = result.NewMap[string, util.ClientInfo]()
 
 // NewStatus returns a new Status struct.
 // It uses the RouteCtx to get the App instance containing the Database instance.
+// Multi-user support: Returns session-specific user data based on the browser's session cookie.
 func (h *Handler) NewStatus(c echo.Context) *Status {
-	var dbAcc *models.Account
 	var currentUser *user.User
 	var settings *models.Settings
 	var theme *models.Theme
-	//var mal *models.Mal
 
-	// Get the user from the database (if logged in)
-	if dbAcc, _ = h.App.Database.GetAccount(); dbAcc != nil {
-		currentUser, _ = user.NewUser(dbAcc)
-		if currentUser != nil {
-			currentUser.Token = "HIDDEN"
-		}
+	// Get the user from the session (multi-user support)
+	sess := GetSessionFromContext(c)
+	if sess != nil && !sess.IsSimulated {
+		// Use session-based user data
+		currentUser = sess.ToUser()
 	} else {
-		// If the user is not logged in, create a simulated user
-		currentUser = user.NewSimulatedUser()
+		// Fall back to database account for backward compatibility
+		if dbAcc, _ := h.App.Database.GetAccount(); dbAcc != nil {
+			currentUser, _ = user.NewUser(dbAcc)
+			if currentUser != nil {
+				currentUser.Token = "HIDDEN"
+			}
+		} else {
+			// If no session and no database account, create a simulated user
+			currentUser = user.NewSimulatedUser()
+		}
 	}
 
 	if settings, _ = h.App.Database.GetSettings(); settings != nil {

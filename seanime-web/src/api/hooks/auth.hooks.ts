@@ -46,8 +46,12 @@ export function useLogout() {
         endpoint: API_ENDPOINTS.AUTH.Logout.endpoint,
         method: API_ENDPOINTS.AUTH.Logout.methods[0],
         mutationKey: [API_ENDPOINTS.AUTH.Logout.key],
-        onSuccess: async () => {
+        onSuccess: async (data) => {
             toast.success("Successfully logged out")
+            // Update server status with the new session state
+            if (data) {
+                setServerStatus(data)
+            }
             await queryClient.invalidateQueries({ queryKey: [API_ENDPOINTS.ANIME_COLLECTION.GetLibraryCollection.key] })
             await queryClient.invalidateQueries({ queryKey: [API_ENDPOINTS.ANILIST.GetRawAnimeCollection.key] })
             await queryClient.invalidateQueries({ queryKey: [API_ENDPOINTS.ANILIST.GetAnimeCollection.key] })

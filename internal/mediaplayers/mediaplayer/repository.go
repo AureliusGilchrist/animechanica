@@ -221,6 +221,16 @@ func (m *Repository) GetDefault() string {
 	return m.Default
 }
 
+// SetCompletionThreshold sets the threshold (0.0-1.0) at which an episode is considered complete.
+// Default is 0.8 (80%). A value of 0.85 means the episode is marked as watched at 85% completion.
+func (m *Repository) SetCompletionThreshold(threshold float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if threshold > 0 && threshold <= 1.0 {
+		m.completionThreshold = threshold
+	}
+}
+
 // Play will start the media player and load the video at the given path.
 // The implementation of the specific media player is handled by the respective media player package.
 // Calling it multiple *should* not open multiple instances of the media player -- subsequent calls should just load a new video if the media player is already open.

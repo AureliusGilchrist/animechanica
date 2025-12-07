@@ -16,9 +16,9 @@ import type {
     Anime_PlaylistEpisode,
     ChapterDownloader_DownloadID,
     Continuity_UpdateWatchHistoryItemOptions,
-    Debrid_TorrentItem,
     DebridClient_CancelStreamOptions,
     DebridClient_StreamPlaybackType,
+    Debrid_TorrentItem,
     HibikeTorrent_AnimeTorrent,
     HibikeTorrent_BatchEpisodeFiles,
     LibraryExplorer_SuperUpdateFileOptions,
@@ -603,17 +603,6 @@ export type DirectorySelector_Variables = {
 export type DirectstreamPlayLocalFile_Variables = {
     path: string
     clientId: string
-}
-
-/**
- * - Filepath: internal/handlers/directstream.go
- * - Filename: directstream.go
- * - Endpoint: /api/v1/directstream/subs/convert-to-ass
- * @description
- * Route converts subtitles to ASS.
- */
-export type DirectstreamFetchAndConvertToASS_Variables = {
-    url: string
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1868,7 +1857,7 @@ export type TorrentClientAddMagnetFromRule_Variables = {
 export type SearchTorrent_Variables = {
     /**
      *  "smart" or "simple"
-     *
+     *  
      *  "smart" or "simple"
      */
     type?: string

@@ -328,6 +328,7 @@ export default function Page() {
                                         autoSyncToLocalAccount: data.autoSyncToLocalAccount ?? false,
                                         autoSaveCurrentMediaOffline: data.autoSaveCurrentMediaOffline ?? false,
                                         useFallbackMetadataProvider: data.useFallbackMetadataProvider ?? false,
+                                        progressUpdateThreshold: data.progressUpdateThreshold ?? 0.8,
                                     },
                                     nakama: {
                                         enabled: data.nakamaEnabled ?? false,
@@ -370,6 +371,7 @@ export default function Page() {
                                         qbittorrentPassword: data.qbittorrentPassword,
                                         qbittorrentUsername: data.qbittorrentUsername,
                                         qbittorrentTags: data.qbittorrentTags,
+                                        qbittorrentDockerized: data.qbittorrentDockerized ?? false,
                                         transmissionPath: data.transmissionPath,
                                         transmissionHost: data.transmissionHost,
                                         transmissionPort: data.transmissionPort,
@@ -433,6 +435,7 @@ export default function Page() {
                                 qbittorrentPassword: status?.settings?.torrent?.qbittorrentPassword,
                                 qbittorrentUsername: status?.settings?.torrent?.qbittorrentUsername,
                                 qbittorrentTags: status?.settings?.torrent?.qbittorrentTags,
+                                qbittorrentDockerized: status?.settings?.torrent?.qbittorrentDockerized ?? false,
                                 transmissionPath: status?.settings?.torrent?.transmissionPath,
                                 transmissionHost: status?.settings?.torrent?.transmissionHost,
                                 transmissionPort: status?.settings?.torrent?.transmissionPort,
@@ -483,6 +486,7 @@ export default function Page() {
                                 nakamaHostUnsharedAnimeIds: status?.settings?.nakama?.hostUnsharedAnimeIds ?? [],
                                 autoSaveCurrentMediaOffline: status?.settings?.library?.autoSaveCurrentMediaOffline ?? false,
                                 useFallbackMetadataProvider: status?.settings?.library?.useFallbackMetadataProvider ?? false,
+                                progressUpdateThreshold: status?.settings?.library?.progressUpdateThreshold || 0.8,
                             }}
                             stackClass="space-y-0 relative"
                         >

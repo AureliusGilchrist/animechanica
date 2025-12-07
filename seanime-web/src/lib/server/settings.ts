@@ -57,6 +57,7 @@ export const settingsSchema = z.object({
     qbittorrentUsername: z.string().optional().default(""),
     qbittorrentPassword: z.string().optional().default(""),
     qbittorrentTags: z.string().optional().default(""),
+    qbittorrentDockerized: z.boolean().optional().default(false),
     transmissionPath: z.string().optional().default(""),
     transmissionHost: z.string().optional().default(""),
     transmissionPort: z.number().optional().default(9091),
@@ -110,6 +111,7 @@ export const settingsSchema = z.object({
     disableCacheLayer: z.boolean().optional().default(false),
     autoSelectTorrentProvider: z.string().optional().default(""),
     useFallbackMetadataProvider: z.boolean().optional().default(false),
+    progressUpdateThreshold: z.number().optional().default(0.8),
 })
 
 export const gettingStartedSchema = _gettingStartedSchema.extend(settingsSchema.shape)
@@ -139,6 +141,7 @@ export const getDefaultSettings = (data: z.infer<typeof gettingStartedSchema>): 
         autoSyncToLocalAccount: false,
         autoSaveCurrentMediaOffline: false,
         useFallbackMetadataProvider: false,
+        progressUpdateThreshold: 0.8,
     },
     nakama: {
         enabled: false,
@@ -190,6 +193,7 @@ export const getDefaultSettings = (data: z.infer<typeof gettingStartedSchema>): 
         qbittorrentPassword: data.qbittorrentPassword,
         qbittorrentUsername: data.qbittorrentUsername,
         qbittorrentTags: "",
+        qbittorrentDockerized: false,
         transmissionPath: data.transmissionPath,
         transmissionHost: data.transmissionHost,
         transmissionPort: data.transmissionPort,

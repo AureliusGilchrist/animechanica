@@ -4,6 +4,7 @@ import (
 	"errors"
 	"seanime/internal/api/anilist"
 	"seanime/internal/onlinestream"
+	"seanime/internal/util"
 
 	"github.com/labstack/echo/v4"
 )
@@ -55,6 +56,16 @@ func (h *Handler) HandleGetOnlineStreamEpisodeList(c echo.Context) error {
 	ret := onlinestream.EpisodeListResponse{
 		Episodes: episodes,
 		Media:    media,
+	}
+
+	// Auto-fetch filler data if not already cached
+	if !h.App.FillerManager.HasFillerFetched(b.MediaId) && media != nil {
+		go func() {
+			defer util.HandlePanicInModuleThen("handlers/HandleGetOnlineStreamEpisodeList/AutoFetchFillerData", func() {
+				h.App.Logger.Error().Int("mediaId", b.MediaId).Msg("handlers: Failed to auto-fetch filler data for onlinestream")
+			})
+			_ = h.App.FillerManager.FetchAndStoreFillerData(b.MediaId, media.GetAllTitlesDeref())
+		}()
 	}
 
 	h.App.FillerManager.HydrateOnlinestreamFillerData(b.MediaId, ret.Episodes)

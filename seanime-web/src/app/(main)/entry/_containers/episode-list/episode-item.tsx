@@ -282,7 +282,7 @@ export function EpisodeItemInfoModalButton({ episode }: { episode: Anime_Episode
                 alt="banner"
                 fill
                 quality={80}
-                preload
+                priority
                 sizes="20rem"
                 className="object-cover object-center opacity-30"
             />

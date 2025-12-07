@@ -73,9 +73,25 @@ export function ServerSettings(props: ServerSettingsProps) {
                     side="right"
                     name="autoUpdateProgress"
                     label="Automatically update progress"
-                    help="If enabled, your progress will be automatically updated when you watch 80% of an episode."
+                    help="If enabled, your progress will be automatically updated when you reach the threshold below."
                     moreHelp="Only applies to desktop and integrated players."
                 />
+                <div className={cn(!f.watch("autoUpdateProgress") && "opacity-50 pointer-events-none")}>
+                    <Field.Number
+                        name="progressUpdateThreshold"
+                        label="Progress update threshold"
+                        help="The percentage (0.5 = 50%, 0.85 = 85%) of an episode you need to watch before it's marked as watched. Default is 0.8 (80%)."
+                        formatOptions={{
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                        }}
+                        min={0.10}
+                        max={0.95}
+                        step={0.05}
+                        placeholder="0.80"
+                        defaultValue={0.80}
+                    />
+                </div>
                 {/*<Separator />*/}
                 <Field.Switch
                     side="right"

@@ -9,11 +9,25 @@ import (
 )
 
 // GetUser returns the currently logged-in user or a simulated one.
+// Note: For multi-user support, prefer GetUserFromSession when you have a session context.
 func (a *App) GetUser() *user.User {
 	if a.user == nil {
 		return user.NewSimulatedUser()
 	}
 	return a.user
+}
+
+// GetUserFromSession returns the user for a specific session.
+// This enables multi-user support where different browser tabs can have different accounts.
+func (a *App) GetUserFromSession(sessionID string) *user.User {
+	if a.SessionStore == nil {
+		return a.GetUser()
+	}
+	sess := a.SessionStore.GetSession(sessionID)
+	if sess == nil || sess.IsSimulated {
+		return user.NewSimulatedUser()
+	}
+	return sess.ToUser()
 }
 
 func (a *App) GetUserAnilistToken() string {
@@ -22,6 +36,67 @@ func (a *App) GetUserAnilistToken() string {
 	}
 
 	return a.user.Token
+}
+
+// GetUserAnilistTokenFromSession returns the Anilist token for a specific session.
+// This enables multi-user support where different browser tabs can have different accounts.
+func (a *App) GetUserAnilistTokenFromSession(sessionID string) string {
+	if a.SessionStore == nil {
+		return a.GetUserAnilistToken()
+	}
+	sess := a.SessionStore.GetSession(sessionID)
+	if sess == nil || sess.IsSimulated {
+		return ""
+	}
+	return sess.GetToken()
+}
+
+// GetAnilistClientForSession returns the Anilist client for a specific session.
+// This enables multi-user support where different browser tabs can have different accounts.
+func (a *App) GetAnilistClientForSession(sessionID string) anilist.AnilistClient {
+	if a.SessionStore == nil || sessionID == "" {
+		return a.AnilistClientRef.Get()
+	}
+	return a.SessionStore.GetAnilistClient(sessionID)
+}
+
+// UpdateEntryProgressForSession updates the progress for a media entry using the session-specific Anilist client.
+// This is used by PlaybackManager and DirectStreamManager to update progress for the correct user session.
+// If sessionID is empty, it falls back to the global platform.
+func (a *App) UpdateEntryProgressForSession(ctx context.Context, sessionID string, mediaID int, progress int, totalEpisodes *int) error {
+	// If no session ID or no session store, use the global platform
+	if sessionID == "" || a.SessionStore == nil {
+		return a.AnilistPlatformRef.Get().UpdateEntryProgress(ctx, mediaID, progress, totalEpisodes)
+	}
+
+	// Get the session
+	sess := a.SessionStore.GetSession(sessionID)
+	if sess == nil || sess.IsSimulated || sess.Token == "" {
+		// Fall back to global platform for simulated/unauthenticated sessions
+		return a.AnilistPlatformRef.Get().UpdateEntryProgress(ctx, mediaID, progress, totalEpisodes)
+	}
+
+	// Use the session-specific Anilist client
+	client := a.SessionStore.GetAnilistClient(sessionID)
+	if client == nil {
+		return a.AnilistPlatformRef.Get().UpdateEntryProgress(ctx, mediaID, progress, totalEpisodes)
+	}
+
+	// Determine the status based on progress
+	status := anilist.MediaListStatusCurrent
+	realTotalCount := 0
+	if totalEpisodes != nil && *totalEpisodes > 0 {
+		realTotalCount = *totalEpisodes
+	}
+	if realTotalCount > 0 && progress >= realTotalCount {
+		status = anilist.MediaListStatusCompleted
+	}
+	if realTotalCount > 0 && progress > realTotalCount {
+		progress = realTotalCount
+	}
+
+	_, err := client.UpdateMediaListEntryProgress(ctx, &mediaID, &progress, &status)
+	return err
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

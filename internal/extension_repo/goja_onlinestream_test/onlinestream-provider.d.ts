@@ -20,15 +20,12 @@ declare type EpisodeServer = {
     videoSources: VideoSource[]
 }
 
-declare type VideoSourceType = "mp4" | "m3u8" | "unknown"
+declare type VideoSourceType = "mp4" | "m3u8"
 
 declare type VideoSource = {
     url: string
     type: VideoSourceType
-    // Quality or label of the video source, should be unique (e.g. "1080p", "1080p - English")
     quality: string
-    // Secondary label of the video source (e.g. "English")
-    label?: string
     subtitles: VideoSubtitle[]
 }
 

@@ -10,7 +10,7 @@ type Episode = {
 
 type EpisodePillsGridProps = {
     episodes: Episode[]
-    currentEpisodeNumber: number | null
+    currentEpisodeNumber: number
     onEpisodeSelect: (episodeNumber: number) => void
     progress?: number
     disabled?: boolean

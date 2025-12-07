@@ -112,6 +112,7 @@ func (a *App) initModulesOnce() {
 		RefreshAnimeCollectionFunc: func() {
 			_, _ = a.RefreshAnimeCollection()
 		},
+		UpdateProgressForSessionFunc: a.UpdateEntryProgressForSession,
 	})
 
 	// +---------------------+
@@ -419,6 +420,11 @@ func (a *App) InitOrRefreshModules() {
 			ContinuityManager: a.ContinuityManager,
 		})
 
+		// Set progress update threshold from settings (default 0.8 = 80%)
+		if settings.Library != nil && settings.Library.ProgressUpdateThreshold > 0 {
+			a.MediaPlayerRepository.SetCompletionThreshold(settings.Library.ProgressUpdateThreshold)
+		}
+
 		a.PlaybackManager.SetMediaPlayerRepository(a.MediaPlayerRepository)
 		a.PlaybackManager.SetSettings(&playbackmanager.Settings{
 			AutoPlayNextEpisode: a.Settings.GetLibrary().AutoPlayNextEpisode,
@@ -443,6 +449,47 @@ func (a *App) InitOrRefreshModules() {
 	// +---------------------+
 
 	if settings.Torrent != nil {
+		// If the user enabled Dockerized qBittorrent in settings, force Docker defaults.
+		if settings.Torrent.QBittorrentDockerized {
+			settings.Torrent.QBittorrentHost = "127.0.0.1"
+			if settings.Torrent.QBittorrentPort == 0 {
+				settings.Torrent.QBittorrentPort = 8080
+			}
+			settings.Torrent.QBittorrentUsername = "admin"
+			settings.Torrent.QBittorrentPassword = "lolmao123"
+			if settings.Torrent.Default == "" {
+				settings.Torrent.Default = "qbittorrent"
+			}
+		} else {
+			// Provide defaults for qBittorrent when settings are not explicitly configured.
+			// This is especially useful for Dockerized deployments where qBittorrent is
+			// expected to run at 127.0.0.1:8080 with known credentials.
+			qbHost := settings.Torrent.QBittorrentHost
+			if qbHost == "" {
+				qbHost = "127.0.0.1"
+			}
+			qbPort := settings.Torrent.QBittorrentPort
+			if qbPort == 0 {
+				qbPort = 8080
+			}
+			qbUsername := settings.Torrent.QBittorrentUsername
+			if qbUsername == "" {
+				qbUsername = "admin"
+			}
+			qbPassword := settings.Torrent.QBittorrentPassword
+			if qbPassword == "" {
+				qbPassword = "lolmao123"
+			}
+			defaultClient := settings.Torrent.Default
+			if defaultClient == "" {
+				defaultClient = "qbittorrent"
+			}
+			settings.Torrent.QBittorrentHost = qbHost
+			settings.Torrent.QBittorrentPort = qbPort
+			settings.Torrent.QBittorrentUsername = qbUsername
+			settings.Torrent.QBittorrentPassword = qbPassword
+			settings.Torrent.Default = defaultClient
+		}
 		// Init qBittorrent
 		qbit := qbittorrent.NewClient(&qbittorrent.NewClientOptions{
 			Logger:   a.Logger,

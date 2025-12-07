@@ -31,7 +31,7 @@ export function ExtensionDetails(props: ExtensionDetailsProps) {
                         crossOrigin="anonymous"
                         fill
                         quality={100}
-                        isExternal
+                        priority
                         className="object-cover"
                     />
                 ) : <div className="w-full h-full flex items-center justify-center">
