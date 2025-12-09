@@ -36,6 +36,9 @@ type Scanner struct {
 	MetadataProviderRef *util.Ref[metadata_provider.Provider]
 	MatchingThreshold   float64
 	MatchingAlgorithm   string
+	// PreMatchMap maps normalized destination paths to media IDs for pre-matching torrents
+	// This allows skipping fuzzy matching for files downloaded from an anime's page
+	PreMatchMap map[string]int
 }
 
 // Scan will scan the directory and return a list of anime.LocalFile.
@@ -319,6 +322,7 @@ func (scn *Scanner) Scan(ctx context.Context) (lfs []*anime.LocalFile, err error
 		ScanSummaryLogger:  scn.ScanSummaryLogger,
 		Algorithm:          scn.MatchingAlgorithm,
 		Threshold:          scn.MatchingThreshold,
+		PreMatchMap:        scn.PreMatchMap,
 	}
 
 	scn.WSEventManager.SendEvent(events.EventScanProgress, 60)

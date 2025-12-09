@@ -445,6 +445,19 @@ type TorrentstreamHistory struct {
 }
 
 // +---------------------+
+// |  TorrentPreMatch    |
+// +---------------------+
+
+// TorrentPreMatch stores the association between a torrent download destination and the anime media ID.
+// This allows the scanner to skip fuzzy matching and directly associate files with the correct anime
+// when the user downloads a torrent from an anime's page.
+type TorrentPreMatch struct {
+	BaseModel
+	Destination string `gorm:"column:destination;index" json:"destination"` // The download destination path
+	MediaId     int    `gorm:"column:media_id" json:"mediaId"`              // The AniList media ID
+}
+
+// +---------------------+
 // |        Filler       |
 // +---------------------+
 

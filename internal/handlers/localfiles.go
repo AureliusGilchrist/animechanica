@@ -351,3 +351,24 @@ func (h *Handler) HandleRemoveEmptyDirectories(c echo.Context) error {
 
 	return h.RespondWithData(c, true)
 }
+
+// HandleClearAllLocalFiles
+//
+//	@summary clears all local files from the database.
+//	@desc This will remove all anime local file entries from the database. Manga data is not affected.
+//	@desc After calling this, you should rescan your library.
+//	@route /api/v1/library/local-files/clear [POST]
+//	@returns bool
+func (h *Handler) HandleClearAllLocalFiles(c echo.Context) error {
+	err := db_bridge.ClearLocalFiles(h.App.Database)
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
+
+	// Also clear torrent pre-matches since they reference media IDs
+	_ = h.App.Database.ClearAllTorrentPreMatches()
+
+	h.App.Logger.Info().Msg("library: Cleared all local files and torrent pre-matches")
+
+	return h.RespondWithData(c, true)
+}

@@ -215,6 +215,14 @@ func (as *AutoScanner) scan() {
 		defer scanLogger.Done()
 	}
 
+	// Build pre-match map from database for accurate torrent file matching
+	preMatchMap := make(map[string]int)
+	if preMatches, err := as.db.GetAllTorrentPreMatches(); err == nil {
+		for _, pm := range preMatches {
+			preMatchMap[pm.Destination] = pm.MediaId
+		}
+	}
+
 	// Create a new scanner
 	sc := scanner.Scanner{
 		DirPath:             settings.Library.LibraryPath,
@@ -231,6 +239,7 @@ func (as *AutoScanner) scan() {
 		MetadataProviderRef: as.metadataProviderRef,
 		MatchingThreshold:   as.settings.ScannerMatchingThreshold,
 		MatchingAlgorithm:   as.settings.ScannerMatchingAlgorithm,
+		PreMatchMap:         preMatchMap,
 	}
 
 	allLfs, err := sc.Scan(context.Background())

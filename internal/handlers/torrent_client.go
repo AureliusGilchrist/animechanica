@@ -267,6 +267,20 @@ func (h *Handler) HandleTorrentClientDownload(c echo.Context) error {
 		}
 	}
 
+	// Save pre-match association so the scanner can directly match files to this anime
+	// This avoids false positives from fuzzy title matching
+	if b.Media != nil && b.Media.ID > 0 {
+		err = h.App.Database.SaveTorrentPreMatch(b.Destination, b.Media.ID)
+		if err != nil {
+			h.App.Logger.Warn().Err(err).Msg("torrent client: Failed to save torrent pre-match")
+		} else {
+			h.App.Logger.Info().
+				Int("mediaId", b.Media.ID).
+				Str("destination", b.Destination).
+				Msg("torrent client: Saved torrent pre-match for accurate file matching")
+		}
+	}
+
 	// Add the media to the collection (if it wasn't already)
 	go func() {
 		defer util.HandlePanicInModuleThen("handlers/HandleTorrentClientDownload", func() {})
@@ -344,4 +358,81 @@ func (h *Handler) HandleTorrentClientAddMagnetFromRule(c echo.Context) error {
 
 	return h.RespondWithData(c, true)
 
+}
+
+// MediaDownloadStatus represents the download status of a media item
+type MediaDownloadStatus struct {
+	MediaId  int                          `json:"mediaId"`
+	Status   torrent_client.TorrentStatus `json:"status"`
+	Progress float64                      `json:"progress"`
+}
+
+// HandleClearTorrentPreMatches
+//
+//	@summary clears all torrent pre-match entries from the database.
+//	@desc This handler removes all stored associations between torrent destinations and media IDs.
+//	@route /api/v1/torrent-client/clear-pre-matches [POST]
+//	@returns bool
+func (h *Handler) HandleClearTorrentPreMatches(c echo.Context) error {
+	err := h.App.Database.ClearAllTorrentPreMatches()
+	if err != nil {
+		return h.RespondWithError(c, err)
+	}
+	h.App.Logger.Info().Msg("torrent client: Cleared all torrent pre-matches")
+	return h.RespondWithData(c, true)
+}
+
+// HandleGetMediaDownloadingStatus
+//
+//	@summary returns the download status of media items that are currently downloading.
+//	@desc This handler returns a map of media IDs to their download status based on active torrents.
+//	@route /api/v1/torrent-client/media-downloading-status [GET]
+//	@returns []MediaDownloadStatus
+func (h *Handler) HandleGetMediaDownloadingStatus(c echo.Context) error {
+	result := make([]MediaDownloadStatus, 0)
+
+	// Get active torrents
+	torrents, err := h.App.TorrentClientRepository.GetActiveTorrents()
+	if err != nil {
+		// Return empty result if torrent client is not available
+		return h.RespondWithData(c, result)
+	}
+
+	// Get all pre-matches
+	preMatches, err := h.App.Database.GetAllTorrentPreMatches()
+	if err != nil {
+		return h.RespondWithData(c, result)
+	}
+
+	// Create a map of destination paths to media IDs
+	destToMediaId := make(map[string]int)
+	for _, pm := range preMatches {
+		destToMediaId[util.NormalizePath(pm.Destination)] = pm.MediaId
+	}
+
+	// Track which media IDs we've already added (to avoid duplicates)
+	addedMediaIds := make(map[int]bool)
+
+	// Match torrents to media IDs based on content path
+	for _, torrent := range torrents {
+		contentPath := util.NormalizePath(torrent.ContentPath)
+
+		// Check if the torrent's content path matches any pre-match destination
+		for destPath, mediaId := range destToMediaId {
+			// Check if content path starts with or equals the destination path
+			if len(contentPath) >= len(destPath) && contentPath[:len(destPath)] == destPath {
+				if !addedMediaIds[mediaId] {
+					result = append(result, MediaDownloadStatus{
+						MediaId:  mediaId,
+						Status:   torrent.Status,
+						Progress: torrent.Progress,
+					})
+					addedMediaIds[mediaId] = true
+				}
+				break
+			}
+		}
+	}
+
+	return h.RespondWithData(c, result)
 }

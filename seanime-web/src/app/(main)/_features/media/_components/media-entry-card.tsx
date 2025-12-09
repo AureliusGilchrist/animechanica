@@ -33,12 +33,15 @@ import { useMediaPreviewModal } from "@/app/(main)/_features/media/_containers/m
 import { usePlaylistEditorManager } from "@/app/(main)/_features/playlists/lib/playlist-editor-manager"
 import { useAnilistUserAnimeListData } from "@/app/(main)/_hooks/anilist-collection-loader"
 import { useMissingEpisodes } from "@/app/(main)/_hooks/missing-episodes-loader"
+import { useMediaDownloadStatus } from "@/app/(main)/_hooks/use-media-download-status"
 import { useHasTorrentOrDebridInclusion, useServerStatus } from "@/app/(main)/_hooks/use-server-status"
 import { MangaEntryCardUnreadBadge } from "@/app/(main)/manga/_containers/manga-entry-card-unread-badge"
 import { SeaLink } from "@/components/shared/sea-link"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/components/ui/core/styling"
 import { ContextMenuGroup, ContextMenuItem, ContextMenuLabel, ContextMenuTrigger } from "@/components/ui/context-menu"
+import { Tooltip } from "@/components/ui/tooltip"
 import { useAtom } from "jotai"
 import { useSetAtom } from "jotai/react"
 import capitalize from "lodash/capitalize"
@@ -46,7 +49,7 @@ import { usePathname, useRouter } from "next/navigation"
 import React, { useState } from "react"
 import { BiAddToQueue, BiPlay } from "react-icons/bi"
 import { IoLibrarySharp } from "react-icons/io5"
-import { LuEye, LuFolderTree } from "react-icons/lu"
+import { LuDownload, LuEye, LuFolderTree } from "react-icons/lu"
 import { RiCalendarLine } from "react-icons/ri"
 import { PluginMediaCardContextMenuItems } from "../../plugin/actions/plugin-actions"
 
@@ -95,6 +98,9 @@ export function MediaEntryCard<T extends "anime" | "manga">(props: MediaEntryCar
     const [listData, setListData] = useState<Anime_EntryListData | undefined>(_listData)
     const [libraryData, setLibraryData] = useState<Anime_EntryLibraryData | undefined>(_libraryData)
     const setActionPopupHover = useSetAtom(__mediaEntryCard_hoveredPopupId)
+    
+    // Get download status for this media
+    const downloadStatus = useMediaDownloadStatus(type === "anime" ? media.id : undefined)
 
     const { selectMediaAndOpenEditor } = usePlaylistEditorManager()
 
@@ -370,6 +376,45 @@ export function MediaEntryCard<T extends "anime" | "manga">(props: MediaEntryCar
                             intent="gray-solid"
                             size="xl"
                         ><RiCalendarLine /></Badge>
+                    </div>
+                )}
+
+                {/* Download Status Badge */}
+                {(type === "anime" && downloadStatus.isActive) && (
+                    <div
+                        data-media-entry-card-body-download-status-badge-container
+                        className="absolute z-[10] right-1 top-1"
+                    >
+                        <Tooltip
+                            trigger={
+                                <Badge
+                                    className={cn(
+                                        "rounded-[--radius-md] px-1.5 py-0.5 text-[0.7rem] gap-1 font-medium",
+                                        downloadStatus.isDownloading && "bg-green-500/90 text-white",
+                                        downloadStatus.isSeeding && "bg-blue-500/90 text-white",
+                                        downloadStatus.isPaused && "bg-yellow-500/90 text-black",
+                                    )}
+                                    intent="gray-solid"
+                                    size="sm"
+                                >
+                                    {downloadStatus.isDownloading && (
+                                        <>
+                                            <span className="relative flex h-1.5 w-1.5">
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
+                                            </span>
+                                            {downloadStatus.progress !== undefined ? `${(downloadStatus.progress * 100).toFixed(0)}%` : <LuDownload />}
+                                        </>
+                                    )}
+                                    {downloadStatus.isSeeding && <LuDownload />}
+                                    {downloadStatus.isPaused && <LuDownload />}
+                                </Badge>
+                            }
+                        >
+                            {downloadStatus.isDownloading && `Downloading: ${((downloadStatus.progress || 0) * 100).toFixed(1)}%`}
+                            {downloadStatus.isSeeding && "Download complete, seeding"}
+                            {downloadStatus.isPaused && "Download paused"}
+                        </Tooltip>
                     </div>
                 )}
 

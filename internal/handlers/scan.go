@@ -59,6 +59,14 @@ func (h *Handler) HandleScanLocalFiles(c echo.Context) error {
 	}
 	defer scanLogger.Done()
 
+	// Build pre-match map from database for accurate torrent file matching
+	preMatchMap := make(map[string]int)
+	if preMatches, err := h.App.Database.GetAllTorrentPreMatches(); err == nil {
+		for _, pm := range preMatches {
+			preMatchMap[pm.Destination] = pm.MediaId
+		}
+	}
+
 	// Create a new scanner
 	sc := scanner.Scanner{
 		DirPath:             libraryPath,
@@ -75,6 +83,7 @@ func (h *Handler) HandleScanLocalFiles(c echo.Context) error {
 		MetadataProviderRef: h.App.MetadataProviderRef,
 		MatchingAlgorithm:   h.App.Settings.GetLibrary().ScannerMatchingAlgorithm,
 		MatchingThreshold:   h.App.Settings.GetLibrary().ScannerMatchingThreshold,
+		PreMatchMap:         preMatchMap,
 	}
 
 	// Scan the library

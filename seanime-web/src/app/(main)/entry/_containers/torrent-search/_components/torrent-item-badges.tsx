@@ -173,3 +173,59 @@ export function TorrentDebridInstantAvailabilityBadge() {
     )
 
 }
+
+export type TorrentDownloadStatus = "downloading" | "seeding" | "paused" | "completed" | null
+
+export function TorrentDownloadStatusBadge({ status, progress }: { status: TorrentDownloadStatus, progress?: number }) {
+    if (!status) return null
+
+    const isDownloading = status === "downloading"
+    const isSeeding = status === "seeding"
+    const isPaused = status === "paused"
+    const isCompleted = isSeeding // Seeding means download is complete
+
+    return (
+        <Tooltip
+            trigger={<Badge
+                data-torrent-item-download-status-badge
+                className={cn(
+                    "rounded-[--radius-md] border-transparent px-1.5 py-0.5 text-[0.75rem] gap-1",
+                    isDownloading && "bg-green-500/20 text-green-300",
+                    isSeeding && "bg-blue-500/20 text-blue-300",
+                    isPaused && "bg-yellow-500/20 text-yellow-300",
+                )}
+                intent="gray"
+            >
+                {isDownloading && (
+                    <>
+                        <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                        </span>
+                        {progress !== undefined ? `${(progress * 100).toFixed(0)}%` : "Downloading"}
+                    </>
+                )}
+                {isSeeding && (
+                    <>
+                        <span className="relative flex h-2 w-2">
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                        </span>
+                        Seeding
+                    </>
+                )}
+                {isPaused && (
+                    <>
+                        <span className="relative flex h-2 w-2">
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
+                        </span>
+                        Paused
+                    </>
+                )}
+            </Badge>}
+        >
+            {isDownloading && "Currently downloading"}
+            {isSeeding && "Download complete, seeding"}
+            {isPaused && "Download paused"}
+        </Tooltip>
+    )
+}

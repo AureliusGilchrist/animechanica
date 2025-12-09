@@ -28,6 +28,9 @@ type Matcher struct {
 	ScanSummaryLogger  *summary.ScanSummaryLogger // optional
 	Algorithm          string
 	Threshold          float64
+	// PreMatchMap maps normalized destination paths to media IDs for pre-matching torrents
+	// This allows skipping fuzzy matching for files downloaded from an anime's page
+	PreMatchMap map[string]int
 }
 
 var (
@@ -128,6 +131,29 @@ func (m *Matcher) matchLocalFileWithMedia(lf *anime.LocalFile) {
 		m.ScanSummaryLogger.LogFileNotMatched(lf, "Already matched")
 		return
 	}
+
+	// Check for pre-match from torrent download
+	// This allows us to skip fuzzy matching for files downloaded from an anime's page
+	if m.PreMatchMap != nil && len(m.PreMatchMap) > 0 {
+		normalizedPath := util.NormalizePath(lf.Path)
+		for destPath, mediaId := range m.PreMatchMap {
+			if len(normalizedPath) >= len(destPath) && normalizedPath[:len(destPath)] == destPath {
+				// Pre-match found - use the media ID directly
+				// We trust the pre-match since it was set when the user downloaded from a specific anime page
+				lf.MediaId = mediaId
+				if m.ScanLogger != nil {
+					m.ScanLogger.LogMatcher(zerolog.InfoLevel).
+						Str("filename", lf.Name).
+						Int("mediaId", mediaId).
+						Str("destination", destPath).
+						Msg("File pre-matched from torrent download")
+				}
+				m.ScanSummaryLogger.LogSuccessfullyMatched(lf, mediaId)
+				return
+			}
+		}
+	}
+
 	// Check if the local file has a title
 	if lf.GetParsedTitle() == "" {
 		if m.ScanLogger != nil {

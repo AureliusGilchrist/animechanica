@@ -74,3 +74,25 @@ export function useTorrentClientGetFiles({ torrent, provider }: { torrent: Nulli
         },
     })
 }
+
+// Type for media download status
+export type MediaDownloadStatus = {
+    mediaId: number
+    status: "downloading" | "seeding" | "paused" | "other" | "stopped"
+    progress: number
+}
+
+/**
+ * Hook to get the download status of media items that are currently downloading.
+ * Returns a map of media IDs to their download status.
+ */
+export function useGetMediaDownloadingStatus(enabled: boolean = true) {
+    return useServerQuery<Array<MediaDownloadStatus>>({
+        endpoint: "/api/v1/torrent-client/media-downloading-status",
+        method: "GET",
+        queryKey: ["media-downloading-status"],
+        refetchInterval: 3000, // Refresh every 3 seconds
+        gcTime: 0,
+        enabled: enabled,
+    })
+}

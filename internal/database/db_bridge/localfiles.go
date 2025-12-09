@@ -1,18 +1,21 @@
 package db_bridge
 
 import (
+	"errors"
 	"seanime/internal/database/db"
 	"seanime/internal/database/models"
 	"seanime/internal/library/anime"
 
 	"github.com/goccy/go-json"
 	"github.com/samber/mo"
+	"gorm.io/gorm"
 )
 
 var CurrLocalFilesDbId uint
 var CurrLocalFiles mo.Option[[]*anime.LocalFile]
 
 // GetLocalFiles will return the latest local files and the id of the entry.
+// If no local files exist in the database, it returns an empty slice instead of an error.
 func GetLocalFiles(db *db.Database) ([]*anime.LocalFile, uint, error) {
 
 	if CurrLocalFiles.IsPresent() {
@@ -23,6 +26,14 @@ func GetLocalFiles(db *db.Database) ([]*anime.LocalFile, uint, error) {
 	var res models.LocalFiles
 	err := db.Gorm().Last(&res).Error
 	if err != nil {
+		// If no record found, return empty slice instead of error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			db.Logger.Debug().Msg("db: No local files found, returning empty slice")
+			emptyLfs := make([]*anime.LocalFile, 0)
+			CurrLocalFiles = mo.Some(emptyLfs)
+			CurrLocalFilesDbId = 0
+			return emptyLfs, 0, nil
+		}
 		return nil, 0, err
 	}
 
@@ -95,4 +106,21 @@ func InsertLocalFiles(db *db.Database, lfs []*anime.LocalFile) ([]*anime.LocalFi
 
 	return lfs, nil
 
+}
+
+// ClearLocalFiles will clear all local files from the database.
+func ClearLocalFiles(database *db.Database) error {
+	// Delete all local files entries
+	err := database.Gorm().Where("1 = 1").Delete(&models.LocalFiles{}).Error
+	if err != nil {
+		return err
+	}
+
+	// Clear the cache
+	CurrLocalFiles = mo.None[[]*anime.LocalFile]()
+	CurrLocalFilesDbId = 0
+
+	database.Logger.Info().Msg("db: All local files cleared")
+
+	return nil
 }
